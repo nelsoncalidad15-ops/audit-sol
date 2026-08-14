@@ -294,7 +294,11 @@ export async function pushAllToAppsScript(
       items: items.map((item) => ({
         id: item.id,
         code: item.code,
+        chapter: item.chapter,
+        section: item.section,
         requirement: item.requirement,
+        pv: item.pv,
+        v: item.v,
         status: item.status,
         finding: item.finding,
         evidences: item.evidences,

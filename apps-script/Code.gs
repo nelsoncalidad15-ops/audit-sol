@@ -5,6 +5,7 @@
 
 const EVALUATION_SHEET = 'EVALUACION_AUDITORIA';
 const HISTORY_SHEET = 'HISTORIAL_AUDITORIAS';
+const EVIDENCE_SHEET = 'EVIDENCIAS';
 
 function doGet() {
   try {
@@ -52,6 +53,7 @@ function doPost(e) {
     const dateText = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
     const evaluation = getEvaluationSheet_();
     const history = getHistorySheet_();
+    const evidenceSheet = getEvidenceSheet_();
 
     evaluation.clearContents();
     evaluation.getRange(1, 1, 1, 12).setValues([[
@@ -61,12 +63,33 @@ function doPost(e) {
     ]]);
     formatHeader_(evaluation.getRange(1, 1, 1, 12));
 
+    evidenceSheet.clearContents();
+    evidenceSheet.getRange(1, 1, 1, 9).setValues([[
+      'CÓDIGO', 'TIPO', 'NOMBRE', 'ENLACE', 'DESCRIPCIÓN',
+      'FECHA DE ALTA', 'ÚLTIMA SINCRONIZACIÓN', 'ESTADO', 'CAPÍTULO'
+    ]]);
+    formatHeader_(evidenceSheet.getRange(1, 1, 1, 9));
+
     const totals = { cumplida: 0, no_cumplida: 0, en_progreso: 0, no_aplica: 0, evidences: 0 };
+    const evidenceRows = [];
     const rows = items.map(function(item) {
       const evidences = item.evidences || [];
       const status = normalizeStatus_(item.status);
       if (Object.prototype.hasOwnProperty.call(totals, status)) totals[status]++;
       totals.evidences += evidences.length;
+      evidences.forEach(function(evidence) {
+        evidenceRows.push([
+          item.code || item.id || '',
+          evidence.type || 'other',
+          evidence.title || 'Evidencia',
+          evidence.url || '',
+          evidence.description || '',
+          evidence.addedAt || '',
+          dateText,
+          status,
+          item.chapter || ''
+        ]);
+      });
 
       return [
         item.code || item.id || '',
@@ -88,6 +111,12 @@ function doPost(e) {
       evaluation.getRange(2, 1, rows.length, 12).setValues(rows);
       evaluation.autoResizeColumns(1, 12);
       evaluation.setFrozenRows(1);
+    }
+
+    if (evidenceRows.length) {
+      evidenceSheet.getRange(2, 1, evidenceRows.length, 9).setValues(evidenceRows);
+      evidenceSheet.autoResizeColumns(1, 9);
+      evidenceSheet.setFrozenRows(1);
     }
 
     history.appendRow([
@@ -128,6 +157,13 @@ function getHistorySheet_() {
     formatHeader_(sheet.getRange(1, 1, 1, 10));
     sheet.setFrozenRows(1);
   }
+  return sheet;
+}
+
+function getEvidenceSheet_() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = spreadsheet.getSheetByName(EVIDENCE_SHEET);
+  if (!sheet) sheet = spreadsheet.insertSheet(EVIDENCE_SHEET);
   return sheet;
 }
 
