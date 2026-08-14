@@ -51,6 +51,9 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   const [pendingFiles, setPendingFiles] = useState<Record<string, File>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [isLinkFormOpen, setIsLinkFormOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkTitle, setLinkTitle] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
@@ -97,6 +100,35 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
     } finally {
       setIsSaving(false);
       setSaveMessage('');
+    }
+  };
+
+  const handleAddLink = (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      const url = new URL(linkUrl.trim()).toString();
+      const evidence: EvidenceLink = {
+        id: `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        type: 'web',
+        title: linkTitle.trim() || new URL(url).hostname,
+        url,
+        addedAt: new Date().toISOString().split('T')[0],
+        verified: true,
+      };
+      const updatedItem: AuditItem = {
+        ...formData,
+        evidences: [...(formData.evidences || []), evidence],
+        status: formData.status === 'pendiente' ? 'cumplida' : formData.status,
+        lastUpdated: new Date().toISOString().split('T')[0],
+      };
+      setFormData(updatedItem);
+      onSaveItem(updatedItem);
+      setLinkUrl('');
+      setLinkTitle('');
+      setIsLinkFormOpen(false);
+      setErrorMsg('');
+    } catch {
+      setErrorMsg('Pegá un enlace válido que comience con https://');
     }
   };
 
@@ -247,31 +279,63 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
 
           {/* EVIDENCES LIST & MANAGEMENT */}
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between gap-2 mb-3">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <FileCheck2 className="w-4 h-4 text-indigo-600" />
                 <span>Enlaces y Evidencias de este punto ({formData.evidences?.length || 0})</span>
               </h3>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isSaving}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{isSaving ? 'Subiendo...' : '+ Subir evidencia'}</span>
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                className="sr-only"
-                onChange={(event) => {
-                  void handleInstantUpload(event.target.files?.[0] || null);
-                  event.target.value = '';
-                }}
-              />
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isSaving}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>{isSaving ? 'Subiendo...' : 'Subir archivo'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsLinkFormOpen((open) => !open)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Agregar enlace</span>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                  className="sr-only"
+                  onChange={(event) => {
+                    void handleInstantUpload(event.target.files?.[0] || null);
+                    event.target.value = '';
+                  }}
+                />
+              </div>
             </div>
+
+            {isLinkFormOpen && (
+              <form onSubmit={handleAddLink} className="mb-4 grid gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 sm:grid-cols-[1fr_180px_auto]">
+                <input
+                  type="url"
+                  required
+                  autoFocus
+                  placeholder="https://sitio-o-documento.com"
+                  value={linkUrl}
+                  onChange={(event) => setLinkUrl(event.target.value)}
+                  className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Nombre (opcional)"
+                  value={linkTitle}
+                  onChange={(event) => setLinkTitle(event.target.value)}
+                  className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
+                />
+                <button type="submit" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">Guardar enlace</button>
+              </form>
+            )}
 
             {/* Add New Evidence Form */}
             {showAddForm && (
