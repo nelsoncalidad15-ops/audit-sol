@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { 
   AuditItem, 
   EvidenceLink, 
@@ -41,6 +41,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   if (!isOpen || !item) return null;
 
   const [formData, setFormData] = useState<AuditItem>({ ...item });
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // New evidence form state
   const [newType, setNewType] = useState<EvidenceType>('photo');
@@ -63,6 +64,40 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
     setNewTitle(file.name);
     setNewType(file.type.startsWith('image/') ? 'photo' : file.type === 'application/pdf' ? 'pdf' : 'other');
     setErrorMsg('');
+  };
+
+  const handleInstantUpload = async (file: File | null) => {
+    if (!file || isSaving) return;
+
+    const type: EvidenceType = file.type.startsWith('image/') ? 'photo' : file.type === 'application/pdf' ? 'pdf' : 'other';
+    const evidence: EvidenceLink = {
+      id: `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      type,
+      title: file.name,
+      url: '',
+      addedAt: new Date().toISOString().split('T')[0],
+      verified: false,
+    };
+
+    setErrorMsg('');
+    setIsSaving(true);
+    setSaveMessage('Subiendo archivo...');
+    try {
+      const uploaded = await uploadEvidenceToAppsScript(item, evidence, file);
+      const updatedItem: AuditItem = {
+        ...formData,
+        evidences: [...(formData.evidences || []), uploaded],
+        status: formData.status === 'pendiente' ? 'cumplida' : formData.status,
+        lastUpdated: new Date().toISOString().split('T')[0],
+      };
+      setFormData(updatedItem);
+      onSaveItem(updatedItem);
+    } catch (error: any) {
+      setErrorMsg(error.message || 'No se pudo guardar el archivo.');
+    } finally {
+      setIsSaving(false);
+      setSaveMessage('');
+    }
   };
 
   const handleAddEvidence = (e: React.FormEvent) => {
@@ -176,11 +211,6 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
               </p>
             </div>
 
-            {errorMsg && !showAddForm && (
-              <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
-                {errorMsg}
-              </p>
-            )}
           </div>
           <button
             type="button"
@@ -194,6 +224,11 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
+          {errorMsg && !showAddForm && (
+            <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
+              {errorMsg}
+            </p>
+          )}
           {/* Requirement summary & instructions */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-xs">
             {item.description && (
@@ -217,16 +252,25 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                 <FileCheck2 className="w-4 h-4 text-indigo-600" />
                 <span>Enlaces y Evidencias de este punto ({formData.evidences?.length || 0})</span>
               </h3>
-              {!showAddForm && (
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(true)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-xs cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>+ Subir evidencia</span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isSaving}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Subiendo...' : '+ Subir evidencia'}</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                className="sr-only"
+                onChange={(event) => {
+                  void handleInstantUpload(event.target.files?.[0] || null);
+                  event.target.value = '';
+                }}
+              />
             </div>
 
             {/* Add New Evidence Form */}
