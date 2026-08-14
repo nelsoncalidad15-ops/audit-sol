@@ -8,19 +8,28 @@ export interface SyncResult {
   timestamp: string;
 }
 
+async function callSecureAuditApi(payload: Record<string, unknown>) {
+  const token = window.netlifyIdentity?.currentUser()?.token?.access_token;
+  if (!token) throw new Error('Tu sesión ya no es válida. Ingresá nuevamente.');
+
+  const response = await fetch('/.netlify/functions/audit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) throw new Error(result.error || 'No se pudo guardar la auditoría.');
+  return result;
+}
+
 export async function uploadEvidenceToAppsScript(
-  config: AppsScriptConfig,
   item: AuditItem,
   evidence: Pick<EvidenceLink, 'id' | 'type' | 'title' | 'description' | 'addedAt'>,
   file: File
 ): Promise<EvidenceLink> {
-  if (!config.scriptUrl || !config.scriptUrl.startsWith('https://script.google.com')) {
-    throw new Error('Primero configura la conexión con Google Apps Script para subir archivos a Drive.');
-  }
-
-  const maxUploadBytes = 10 * 1024 * 1024;
+  const maxUploadBytes = 4 * 1024 * 1024;
   if (file.size > maxUploadBytes) {
-    throw new Error('El archivo supera 10 MB. Para archivos grandes, súbelo a Drive y luego vincúlalo desde la matriz.');
+    throw new Error('El archivo supera 4 MB. Elegí una versión más liviana para guardarlo desde la matriz.');
   }
 
   const fileData = await new Promise<string>((resolve, reject) => {
@@ -30,21 +39,13 @@ export async function uploadEvidenceToAppsScript(
     reader.readAsDataURL(file);
   });
 
-  const response = await fetch(config.scriptUrl, {
-    method: 'POST',
-    mode: 'cors',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({
-      action: 'upload_evidence',
-      driveFolderId: config.driveFolderId || '',
-      item: { code: item.code, chapter: item.chapter },
-      evidence,
-      file: { name: file.name, mimeType: file.type || 'application/octet-stream', base64: fileData },
-    }),
+  const result = await callSecureAuditApi({
+    action: 'upload_evidence',
+    item: { code: item.code, chapter: item.chapter },
+    evidence,
+    file: { name: file.name, mimeType: file.type || 'application/octet-stream', base64: fileData },
   });
-
-  const result = await response.json();
-  if (!result.success || !result.evidence) {
+  if (!result.evidence) {
     throw new Error(result.error || 'No se pudo guardar el archivo en Google Drive.');
   }
   return result.evidence as EvidenceLink;
@@ -322,17 +323,8 @@ export async function syncWithAppsScript(
 }
 
 export async function pushAllToAppsScript(
-  config: AppsScriptConfig,
   items: AuditItem[]
 ): Promise<SyncResult> {
-  if (!config.scriptUrl || !config.scriptUrl.startsWith('https://script.google.com')) {
-    return {
-      success: false,
-      message: 'Configura primero la URL de tu Google Apps Script Web App.',
-      timestamp: new Date().toISOString(),
-    };
-  }
-
   try {
     const payload = {
       action: 'save_all',
@@ -350,16 +342,7 @@ export async function pushAllToAppsScript(
       })),
     };
 
-    const res = await fetch(config.scriptUrl, {
-      method: 'POST',
-      mode: 'cors',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await res.json();
+    const data = await callSecureAuditApi(payload);
     return {
       success: data.success ?? true,
       message: data.message || 'Todas las evidencias y estados fueron guardados en el Google Sheet.',

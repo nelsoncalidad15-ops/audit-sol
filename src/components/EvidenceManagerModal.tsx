@@ -3,8 +3,7 @@ import {
   AuditItem, 
   EvidenceLink, 
   EvidenceType, 
-  ComplianceStatus,
-  AppsScriptConfig
+  ComplianceStatus
 } from '../types/audit';
 import { uploadEvidenceToAppsScript } from '../services/googleSyncService';
 import { EVIDENCE_CONFIG } from './EvidenceTypeBadge';
@@ -32,7 +31,6 @@ import {
 
 interface EvidenceManagerModalProps {
   item: AuditItem | null;
-  config: AppsScriptConfig;
   isOpen: boolean;
   onClose: () => void;
   onSaveItem: (updatedItem: AuditItem) => void;
@@ -40,7 +38,6 @@ interface EvidenceManagerModalProps {
 
 export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   item,
-  config,
   isOpen,
   onClose,
   onSaveItem,
@@ -158,7 +155,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
       for (const [evidenceId, file] of Object.entries(pendingFiles) as Array<[string, File]>) {
         const evidence = finalEvidences.find((itemEvidence) => itemEvidence.id === evidenceId);
         if (!evidence) continue;
-        const uploadedEvidence = await uploadEvidenceToAppsScript(config, item, evidence, file);
+        const uploadedEvidence = await uploadEvidenceToAppsScript(item, evidence, file);
         finalEvidences = finalEvidences.map((itemEvidence) => itemEvidence.id === evidenceId ? uploadedEvidence : itemEvidence);
       }
       onSaveItem({ ...formData, evidences: finalEvidences, lastUpdated: new Date().toISOString().split('T')[0] });
@@ -333,7 +330,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                     />
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Se guardará automáticamente en Drive, dentro de la carpeta de este criterio. Máximo 10 MB por archivo.
+                    Se guardará automáticamente en Drive, dentro de la carpeta de este criterio. Máximo 4 MB por archivo.
                   </p>
                 </div>
 

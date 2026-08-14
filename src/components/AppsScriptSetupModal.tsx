@@ -101,7 +101,7 @@ export const AppsScriptSetupModal: React.FC<AppsScriptSetupModalProps> = ({
     setStatusMessage({ text: 'Guardando todas las evidencias en el Google Sheet...', type: 'info' });
 
     try {
-      const res = await pushAllToAppsScript({ ...config, scriptUrl }, auditItems);
+      const res = await pushAllToAppsScript(auditItems);
       if (res.success) {
         setStatusMessage({ text: res.message, type: 'success' });
       } else {

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   AuditItem, 
-  AppsScriptConfig, 
   ComplianceStatus, 
   EvidenceType, 
   EvidenceLink 
@@ -9,8 +8,6 @@ import {
 import { 
   getStoredAuditItems, 
   saveAuditItems, 
-  getStoredConfig, 
-  saveConfig, 
   calculateStats
 } from './services/storageService';
 import { pushAllToAppsScript } from './services/googleSyncService';
@@ -18,7 +15,6 @@ import { Header } from './components/Header';
 import { AuditItemCard, STATUS_CONFIG } from './components/AuditItemCard';
 import { EvidenceButton } from './components/EvidenceTypeBadge';
 import { EvidenceManagerModal } from './components/EvidenceManagerModal';
-import { AppsScriptSetupModal } from './components/AppsScriptSetupModal';
 import { AuditReportModal } from './components/AuditReportModal';
 import { QuickViewerModal } from './components/QuickViewerModal';
 import { AuditMode } from './components/AuditMode';
@@ -46,9 +42,7 @@ import {
   Workflow,
   HardDrive,
   FileCheck2,
-  Settings,
-  HelpCircle,
-  CloudCheck
+  HelpCircle
 } from 'lucide-react';
 
 const CHAPTER_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -61,8 +55,6 @@ const CHAPTER_ICONS: Record<string, React.ComponentType<{ className?: string }>>
 export default function App() {
   // Main state
   const [items, setItems] = useState<AuditItem[]>(() => getStoredAuditItems());
-  const [config, setConfig] = useState<AppsScriptConfig>(() => getStoredConfig());
-  const [isSyncing, setIsSyncing] = useState(false);
 
   // View Mode: table (high-density) or cards
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'audit'>('table');
@@ -79,7 +71,6 @@ export default function App() {
   // Modals state
   const [selectedItemForModal, setSelectedItemForModal] = useState<AuditItem | null>(null);
   const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
-  const [isAppsScriptModalOpen, setIsAppsScriptModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [previewEvidence, setPreviewEvidence] = useState<EvidenceLink | null>(null);
 
@@ -95,10 +86,6 @@ export default function App() {
   useEffect(() => {
     saveAuditItems(items);
   }, [items]);
-
-  useEffect(() => {
-    saveConfig(config);
-  }, [config]);
 
   // Derived statistics
   const stats = useMemo(() => calculateStats(items), [items]);
@@ -204,49 +191,18 @@ export default function App() {
     showToast(`Estado actualizado`);
   };
 
-  const handleQuickSync = async () => {
-    if (!config.scriptUrl) {
-      setIsAppsScriptModalOpen(true);
-      return;
-    }
-
-    setIsSyncing(true);
-    try {
-      const res = await pushAllToAppsScript(config, items);
-      if (res.success) {
-        setConfig((prev) => ({ ...prev, lastSyncTime: res.timestamp, lastSyncStatus: 'success' }));
-        showToast('Cambios sincronizados', 'success');
-      } else {
-        setConfig((prev) => ({ ...prev, lastSyncStatus: 'error', lastError: res.message }));
-        showToast(res.message, 'error');
-      }
-    } catch (e: any) {
-      showToast(e.message || 'Error en sincronización', 'error');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Every change is saved locally immediately and sent to Apps Script shortly after.
-  // The short delay groups consecutive edits into one cloud update.
+  // Los cambios se guardan al instante y, tras una breve pausa, se respaldan de forma segura.
   useEffect(() => {
-    if (!config.autoSync || !config.scriptUrl) return;
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    if (isLocal) return;
 
     const timer = window.setTimeout(async () => {
-      setIsSyncing(true);
-      const res = await pushAllToAppsScript(config, items);
-      setConfig((prev) => ({
-        ...prev,
-        lastSyncTime: res.timestamp,
-        lastSyncStatus: res.success ? 'success' : 'error',
-        lastError: res.success ? undefined : res.message,
-      }));
-      if (!res.success) showToast('No se pudo sincronizar automáticamente', 'error');
-      setIsSyncing(false);
+      const res = await pushAllToAppsScript(items);
+      if (!res.success) showToast('No se pudo guardar el cambio de forma segura.', 'error');
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [items, config.scriptUrl, config.autoSync]);
+  }, [items]);
 
   const handleResetFilters = () => {
     setSearchQuery('');
@@ -492,15 +448,6 @@ export default function App() {
                 </div>
                 <div className="text-xs font-bold text-gray-900 truncate">Equipo de Calidad</div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsAppsScriptModalOpen(true)}
-                title="Ajustes de conexión y respaldo"
-                className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-              >
-                <Settings className="w-4 h-4" />
-                <span className="sr-only">Ajustes</span>
-              </button>
             </div>
           </div>
         </aside>
@@ -844,22 +791,9 @@ export default function App() {
       {/* Modals */}
       <EvidenceManagerModal
         item={selectedItemForModal}
-        config={config}
         isOpen={isEvidenceModalOpen}
         onClose={() => setIsEvidenceModalOpen(false)}
         onSaveItem={handleSaveItem}
-      />
-
-      <AppsScriptSetupModal
-        isOpen={isAppsScriptModalOpen}
-        onClose={() => setIsAppsScriptModalOpen(false)}
-        config={config}
-        onSaveConfig={setConfig}
-        auditItems={items}
-        onItemsSynced={(newItems) => {
-          setItems(newItems);
-          showToast('Datos sincronizados con Google Sheet exitosamente');
-        }}
       />
 
       <AuditReportModal

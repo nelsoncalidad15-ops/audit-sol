@@ -10,46 +10,13 @@ const DRIVE_ROOT_FOLDER = 'Auditoría Calidad Autosol';
 const DRIVE_ROOT_FOLDER_ID = '';
 
 function doGet() {
-  try {
-    const sheet = getEvaluationSheet_();
-    const values = sheet.getDataRange().getValues();
-    const evidenceMap = {};
-
-    for (let row = 1; row < values.length; row++) {
-      const code = String(values[row][0] || '').trim();
-      if (!code) continue;
-
-      let evidences = [];
-      try {
-        const storedEvidences = values[row][9];
-        if (typeof storedEvidences === 'string' && storedEvidences.startsWith('[')) {
-          evidences = JSON.parse(storedEvidences);
-        }
-      } catch (error) {
-        // A malformed evidence value must not block the rest of the audit data.
-      }
-
-      evidenceMap[code] = {
-        status: normalizeStatus_(values[row][6]),
-        finding: values[row][7] || '',
-        evidences: evidences,
-        lastUpdated: values[row][10] || ''
-      };
-    }
-
-    return json_({
-      success: true,
-      timestamp: new Date().toISOString(),
-      evidenceMap: evidenceMap
-    });
-  } catch (error) {
-    return json_({ success: false, error: String(error) });
-  }
+  return json_({ success: false, error: 'Método no autorizado.' });
 }
 
 function doPost(e) {
   try {
     const request = JSON.parse(e.postData.contents || '{}');
+    if (!isAuthorized_(request.token)) return json_({ success: false, error: 'No autorizado.' });
     if (request.action === 'upload_evidence') {
       return uploadEvidence_(request);
     }
@@ -206,7 +173,8 @@ function getOrCreateFolder_(name, parent) {
 }
 
 function getAuditRootFolder_(configuredFolder) {
-  const rawFolder = String(configuredFolder || DRIVE_ROOT_FOLDER_ID || '').trim();
+  const storedFolder = PropertiesService.getScriptProperties().getProperty('DRIVE_ROOT_FOLDER_ID');
+  const rawFolder = String(configuredFolder || storedFolder || DRIVE_ROOT_FOLDER_ID || '').trim();
   const matches = rawFolder.match(/folders\/([^/?]+)/);
   const folderId = matches ? matches[1] : rawFolder;
   return folderId
@@ -232,4 +200,9 @@ function normalizeStatus_(value) {
 function json_(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function isAuthorized_(token) {
+  const expectedToken = PropertiesService.getScriptProperties().getProperty('AUDIT_API_TOKEN');
+  return Boolean(expectedToken && token && expectedToken === token);
 }
