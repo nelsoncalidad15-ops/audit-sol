@@ -12,13 +12,13 @@ Aplicación privada para consultar la matriz de auditoría, cargar evidencias y 
 4. En Netlify, conecta este repositorio y agrega como variables de entorno:
    - `APPS_SCRIPT_URL`: la URL `/exec` del paso anterior.
    - `AUDIT_API_TOKEN`: exactamente el mismo valor del paso 2.
-5. En Netlify habilita **Identity**, deja el registro en modo **Invite only** e invita únicamente a las cuentas autorizadas.
-6. Comparte la carpeta raíz de Drive solamente con esas mismas cuentas. Así podrán abrir los archivos que carguen o consulten.
+5. En Netlify agrega `PORTAL_PASSWORD`: la única contraseña que usará el equipo para ingresar.
+6. Comparte la carpeta raíz de Drive solamente con las personas autorizadas. Así podrán abrir los archivos que carguen o consulten.
 
 Netlify usa `npm run build` y publica `dist` automáticamente mediante [`netlify.toml`](netlify.toml).
 
 ## Seguridad
 
-La web no contiene la URL de Apps Script, el token, ni el ID de Drive. Los usuarios primero deben iniciar sesión; recién entonces una función privada de Netlify reenvía cada guardado al Script con el token secreto. El Script rechaza cualquier petición sin ese token y no entrega datos por `GET`.
+La web no contiene la URL de Apps Script, el token, el ID de Drive ni la contraseña. El acceso crea una sesión privada de 12 horas; recién entonces una función de Netlify reenvía cada guardado al Script con el token secreto. El Script rechaza cualquier petición sin ese token y no entrega datos por `GET`.
 
 Después de actualizar `Code.gs`, publica una nueva implementación de Apps Script. La URL anterior no debe considerarse protegida.

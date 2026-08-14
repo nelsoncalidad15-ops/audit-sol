@@ -7,12 +7,10 @@ export interface SyncResult {
 }
 
 async function callSecureAuditApi(payload: Record<string, unknown>) {
-  const token = window.netlifyIdentity?.currentUser()?.token?.access_token;
-  if (!token) throw new Error('Tu sesión ya no es válida. Ingresá nuevamente.');
-
   const response = await fetch('/.netlify/functions/audit', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
   const result = await response.json();
