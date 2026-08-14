@@ -6,6 +6,7 @@
 const EVALUATION_SHEET = 'EVALUACION_AUDITORIA';
 const HISTORY_SHEET = 'HISTORIAL_AUDITORIAS';
 const EVIDENCE_SHEET = 'EVIDENCIAS';
+const DRIVE_ROOT_FOLDER = 'Auditoría Calidad Autosol';
 
 function doGet() {
   try {
@@ -48,6 +49,9 @@ function doGet() {
 function doPost(e) {
   try {
     const request = JSON.parse(e.postData.contents || '{}');
+    if (request.action === 'upload_evidence') {
+      return uploadEvidence_(request);
+    }
     const items = request.items || [];
     const now = new Date();
     const dateText = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
@@ -165,6 +169,43 @@ function getEvidenceSheet_() {
   let sheet = spreadsheet.getSheetByName(EVIDENCE_SHEET);
   if (!sheet) sheet = spreadsheet.insertSheet(EVIDENCE_SHEET);
   return sheet;
+}
+
+function uploadEvidence_(request) {
+  const file = request.file || {};
+  const evidence = request.evidence || {};
+  const item = request.item || {};
+  if (!file.base64 || !file.name || !item.code) {
+    return json_({ success: false, error: 'Faltan los datos del archivo o del criterio.' });
+  }
+
+  const root = getOrCreateFolder_(DRIVE_ROOT_FOLDER);
+  const criterionFolder = getOrCreateFolder_(sanitizeFolderName_(item.code + ' - ' + (item.chapter || 'Evidencias')), root);
+  const blob = Utilities.newBlob(Utilities.base64Decode(file.base64), file.mimeType || 'application/octet-stream', file.name);
+  const driveFile = criterionFolder.createFile(blob);
+
+  return json_({
+    success: true,
+    evidence: {
+      id: evidence.id,
+      type: evidence.type || 'other',
+      title: evidence.title || file.name,
+      url: driveFile.getUrl(),
+      description: evidence.description || '',
+      addedAt: evidence.addedAt || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+      verified: true,
+      fileSize: Math.round(driveFile.getSize() / 1024) + ' KB'
+    }
+  });
+}
+
+function getOrCreateFolder_(name, parent) {
+  const folders = parent ? parent.getFoldersByName(name) : DriveApp.getFoldersByName(name);
+  return folders.hasNext() ? folders.next() : (parent ? parent.createFolder(name) : DriveApp.createFolder(name));
+}
+
+function sanitizeFolderName_(name) {
+  return String(name).replace(/[\\/:*?"<>|]/g, '-').substring(0, 120);
 }
 
 function formatHeader_(range) {

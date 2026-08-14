@@ -844,6 +844,7 @@ export default function App() {
       {/* Modals */}
       <EvidenceManagerModal
         item={selectedItemForModal}
+        config={config}
         isOpen={isEvidenceModalOpen}
         onClose={() => setIsEvidenceModalOpen(false)}
         onSaveItem={handleSaveItem}

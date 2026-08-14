@@ -1,10 +1,51 @@
-import { AuditItem, AppsScriptConfig } from '../types/audit';
+import { AuditItem, AppsScriptConfig, EvidenceLink } from '../types/audit';
 
 export interface SyncResult {
   success: boolean;
   message: string;
   items?: AuditItem[];
   timestamp: string;
+}
+
+export async function uploadEvidenceToAppsScript(
+  config: AppsScriptConfig,
+  item: AuditItem,
+  evidence: Pick<EvidenceLink, 'id' | 'type' | 'title' | 'description' | 'addedAt'>,
+  file: File
+): Promise<EvidenceLink> {
+  if (!config.scriptUrl || !config.scriptUrl.startsWith('https://script.google.com')) {
+    throw new Error('Primero configura la conexión con Google Apps Script para subir archivos a Drive.');
+  }
+
+  const maxUploadBytes = 10 * 1024 * 1024;
+  if (file.size > maxUploadBytes) {
+    throw new Error('El archivo supera 10 MB. Para archivos grandes, súbelo a Drive y luego vincúlalo desde la matriz.');
+  }
+
+  const fileData = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo seleccionado.'));
+    reader.readAsDataURL(file);
+  });
+
+  const response = await fetch(config.scriptUrl, {
+    method: 'POST',
+    mode: 'cors',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      action: 'upload_evidence',
+      item: { code: item.code, chapter: item.chapter },
+      evidence,
+      file: { name: file.name, mimeType: file.type || 'application/octet-stream', base64: fileData },
+    }),
+  });
+
+  const result = await response.json();
+  if (!result.success || !result.evidence) {
+    throw new Error(result.error || 'No se pudo guardar el archivo en Google Drive.');
+  }
+  return result.evidence as EvidenceLink;
 }
 
 export const APPS_SCRIPT_CODE_TEMPLATE = `/**
