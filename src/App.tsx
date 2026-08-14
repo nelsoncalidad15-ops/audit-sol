@@ -65,7 +65,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   // View Mode: table (high-density) or cards
-  const [viewMode, setViewMode] = useState<'table' | 'cards' | 'audit'>('audit');
+  const [viewMode, setViewMode] = useState<'table' | 'cards' | 'audit'>('table');
 
   // Filters state
   const [searchQuery, setSearchQuery] = useState('');

@@ -1,4 +1,5 @@
 import { AuditItem, AppsScriptConfig, EvidenceLink } from '../types/audit';
+import CODE_GS_SOURCE from '../../apps-script/Code.gs?raw';
 
 export interface SyncResult {
   success: boolean;
@@ -35,6 +36,7 @@ export async function uploadEvidenceToAppsScript(
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({
       action: 'upload_evidence',
+      driveFolderId: config.driveFolderId || '',
       item: { code: item.code, chapter: item.chapter },
       evidence,
       file: { name: file.name, mimeType: file.type || 'application/octet-stream', base64: fileData },
@@ -48,7 +50,9 @@ export async function uploadEvidenceToAppsScript(
   return result.evidence as EvidenceLink;
 }
 
-export const APPS_SCRIPT_CODE_TEMPLATE = `/**
+export const APPS_SCRIPT_CODE_TEMPLATE = CODE_GS_SOURCE;
+
+const LEGACY_APPS_SCRIPT_CODE_TEMPLATE = `/**
  * =========================================================================
  * GOOGLE APPS SCRIPT - PORTAL OFICIAL DE AUDITORÍA & EVIDENCIAS (GRUPO VAG)
  * Base de Datos Segura: Google Sheets + Almacenamiento en Google Drive

@@ -40,6 +40,7 @@ export interface AppsScriptConfig {
   scriptUrl: string;
   sheetId: string;
   gid: string;
+  driveFolderId?: string;
   syncMode: 'direct' | 'appscript' | 'csv';
   autoSync: boolean;
   lastSyncTime?: string;

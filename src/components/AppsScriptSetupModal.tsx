@@ -39,6 +39,7 @@ export const AppsScriptSetupModal: React.FC<AppsScriptSetupModalProps> = ({
   const [scriptUrl, setScriptUrl] = useState(config.scriptUrl || '');
   const [sheetId, setSheetId] = useState(config.sheetId || '12w_E2kt3Rqs9MTreR-Y4zNmZeUFy3yT3B95BKWNcZvc');
   const [gid, setGid] = useState(config.gid || '295935298');
+  const [driveFolderId, setDriveFolderId] = useState(config.driveFolderId || '');
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeTab, setActiveTab] = useState<'appscript' | 'netlify' | 'sheet'>('appscript');
   
@@ -57,6 +58,7 @@ export const AppsScriptSetupModal: React.FC<AppsScriptSetupModalProps> = ({
       scriptUrl: scriptUrl.trim(),
       sheetId: sheetId.trim(),
       gid: gid.trim(),
+      driveFolderId: driveFolderId.trim(),
       autoSync: true,
     };
     onSaveConfig(newConfig);
@@ -369,6 +371,20 @@ export const AppsScriptSetupModal: React.FC<AppsScriptSetupModalProps> = ({
                     onChange={(e) => setGid(e.target.value)}
                     className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white font-mono"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Carpeta de Drive para evidencias:
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="Pegá aquí el enlace de la carpeta de Drive"
+                    value={driveFolderId}
+                    onChange={(e) => setDriveFolderId(e.target.value)}
+                    className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white font-mono"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">Las fotos y documentos se guardarán dentro de esta carpeta, organizados por criterio.</p>
                 </div>
 
                 <div className="pt-2">

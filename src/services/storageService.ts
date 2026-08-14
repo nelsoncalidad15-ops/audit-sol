@@ -8,6 +8,7 @@ export const DEFAULT_CONFIG: AppsScriptConfig = {
   scriptUrl: '',
   sheetId: ORIGINAL_SHEET_ID,
   gid: ORIGINAL_SHEET_GID,
+  driveFolderId: '',
   syncMode: 'csv',
   autoSync: true,
   lastSyncStatus: 'idle',

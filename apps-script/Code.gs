@@ -7,6 +7,7 @@ const EVALUATION_SHEET = 'EVALUACION_AUDITORIA';
 const HISTORY_SHEET = 'HISTORIAL_AUDITORIAS';
 const EVIDENCE_SHEET = 'EVIDENCIAS';
 const DRIVE_ROOT_FOLDER = 'Auditoría Calidad Autosol';
+const DRIVE_ROOT_FOLDER_ID = '';
 
 function doGet() {
   try {
@@ -179,7 +180,7 @@ function uploadEvidence_(request) {
     return json_({ success: false, error: 'Faltan los datos del archivo o del criterio.' });
   }
 
-  const root = getOrCreateFolder_(DRIVE_ROOT_FOLDER);
+  const root = getAuditRootFolder_(request.driveFolderId);
   const criterionFolder = getOrCreateFolder_(sanitizeFolderName_(item.code + ' - ' + (item.chapter || 'Evidencias')), root);
   const blob = Utilities.newBlob(Utilities.base64Decode(file.base64), file.mimeType || 'application/octet-stream', file.name);
   const driveFile = criterionFolder.createFile(blob);
@@ -202,6 +203,15 @@ function uploadEvidence_(request) {
 function getOrCreateFolder_(name, parent) {
   const folders = parent ? parent.getFoldersByName(name) : DriveApp.getFoldersByName(name);
   return folders.hasNext() ? folders.next() : (parent ? parent.createFolder(name) : DriveApp.createFolder(name));
+}
+
+function getAuditRootFolder_(configuredFolder) {
+  const rawFolder = String(configuredFolder || DRIVE_ROOT_FOLDER_ID || '').trim();
+  const matches = rawFolder.match(/folders\/([^/?]+)/);
+  const folderId = matches ? matches[1] : rawFolder;
+  return folderId
+    ? DriveApp.getFolderById(folderId)
+    : getOrCreateFolder_(DRIVE_ROOT_FOLDER);
 }
 
 function sanitizeFolderName_(name) {

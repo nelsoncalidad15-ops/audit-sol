@@ -26,7 +26,8 @@ import {
   Link as LinkIcon,
   HelpCircle,
   QrCode,
-  Pencil
+  Pencil,
+  UploadCloud
 } from 'lucide-react';
 
 interface EvidenceManagerModalProps {
@@ -64,6 +65,14 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   const [editUrl, setEditUrl] = useState('');
   const [editDescription, setEditDescription] = useState('');
 
+  const handleFileSelected = (file: File | null) => {
+    if (!file) return;
+    setNewFile(file);
+    setNewTitle(file.name);
+    setNewType(file.type.startsWith('image/') ? 'photo' : file.type === 'application/pdf' ? 'pdf' : 'other');
+    setErrorMsg('');
+  };
+
   const handleAddEvidence = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFile) {
@@ -72,7 +81,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
     }
 
     const typeConfig = EVIDENCE_CONFIG[newType];
-    const generatedTitle = newTitle.trim() || `${typeConfig.label} - ${item.code}`;
+    const generatedTitle = newTitle.trim() || newFile.name || `${typeConfig.label} - ${item.code}`;
 
     const newEvidence: EvidenceLink = {
       id: `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -250,7 +259,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                 )}
 
                 {/* Evidence Type Selection Buttons */}
-                <div>
+                <div className="hidden">
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Tipo de evidencia:
                   </label>
@@ -280,7 +289,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                 </div>
 
                 {/* Title */}
-                <div>
+                <div className="hidden">
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Título o Nombre de la Evidencia:
                   </label>
@@ -295,15 +304,31 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
 
                 {/* File upload */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Archivo <span className="text-rose-600">*</span>:
-                  </label>
-                  <div className="flex gap-2">
+                  <label
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      handleFileSelected(event.dataTransfer.files?.[0] || null);
+                    }}
+                    className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-indigo-200 bg-white px-5 text-center transition-colors hover:border-indigo-400 hover:bg-indigo-50/40"
+                  >
+                    <UploadCloud className="mb-2 h-8 w-8 text-indigo-500" />
+                    <span className="text-sm font-bold text-slate-800">Arrastrá un archivo aquí</span>
+                    <span className="mt-1 text-xs text-slate-500">o tocá para seleccionar una foto, PDF o documento</span>
                     <input
                       type="file"
                       required
                       accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                      onChange={(e) => setNewFile(e.target.files?.[0] || null)}
+                      onChange={(event) => handleFileSelected(event.target.files?.[0] || null)}
+                      className="sr-only"
+                    />
+                    {newFile && <span className="mt-3 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">{newFile.name}</span>}
+                  </label>
+                  <div className="hidden">
+                    <input
+                      type="file"
+                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                      onChange={(e) => handleFileSelected(e.target.files?.[0] || null)}
                       className="flex-1 text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
@@ -313,7 +338,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                 </div>
 
                 {/* Description */}
-                <div>
+                <div className="hidden">
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Descripción / Nota explicativa (opcional):
                   </label>
