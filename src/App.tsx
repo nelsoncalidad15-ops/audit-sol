@@ -463,7 +463,7 @@ export default function App() {
                 <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Buscar por ID (ej: 1.1.1), requerimiento, enlace, foto..."
+                  placeholder="Buscar requisito, tema o evidencia..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full text-xs pl-8 pr-6 py-1.5 rounded border border-gray-300 bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-sans"
@@ -700,7 +700,7 @@ export default function App() {
                                 <button
                                   type="button"
                                   onClick={() => handleQuickAddEvidence(item)}
-                                  title="Añadir enlace de evidencia (Foto, PDF, Sheet, Web, SOP)"
+                                  title="Subir evidencia"
                                   className="w-7 h-7 sm:w-8 sm:h-8 rounded border border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-500 hover:bg-blue-50/50 transition-colors cursor-pointer"
                                 >
                                   <Plus className="w-3.5 h-3.5" />

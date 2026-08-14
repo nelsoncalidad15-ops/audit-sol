@@ -12,8 +12,6 @@ import {
   Plus, 
   Trash2, 
   ExternalLink, 
-  Copy, 
-  Check, 
   FileCheck2, 
   Camera, 
   FileText, 
@@ -22,9 +20,7 @@ import {
   Workflow, 
   HardDrive,
   Save,
-  Link as LinkIcon,
   HelpCircle,
-  QrCode,
   Pencil,
   UploadCloud
 } from 'lucide-react';
@@ -45,7 +41,6 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   if (!isOpen || !item) return null;
 
   const [formData, setFormData] = useState<AuditItem>({ ...item });
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // New evidence form state
   const [newType, setNewType] = useState<EvidenceType>('photo');
@@ -59,7 +54,6 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
   const [editType, setEditType] = useState<EvidenceType>('photo');
   const [editTitle, setEditTitle] = useState('');
-  const [editUrl, setEditUrl] = useState('');
   const [editDescription, setEditDescription] = useState('');
 
   const handleFileSelected = (file: File | null) => {
@@ -122,29 +116,22 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
     setEditingEvidenceId(evidence.id);
     setEditType(evidence.type);
     setEditTitle(evidence.title);
-    setEditUrl(evidence.url);
     setEditDescription(evidence.description || '');
   };
 
   const handleSaveEdit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!editingEvidenceId || (!editUrl.trim() && !pendingFiles[editingEvidenceId])) return;
+    if (!editingEvidenceId) return;
 
     setFormData((prev) => ({
       ...prev,
       evidences: (prev.evidences || []).map((evidence) =>
         evidence.id === editingEvidenceId
-          ? { ...evidence, type: editType, title: editTitle.trim() || evidence.title, url: editUrl.trim() || evidence.url, description: editDescription.trim() }
+          ? { ...evidence, type: editType, title: editTitle.trim() || evidence.title, description: editDescription.trim() }
           : evidence
       ),
     }));
     setEditingEvidenceId(null);
-  };
-
-  const handleCopyLink = (url: string, id: string) => {
-    navigator.clipboard.writeText(url);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleSave = async () => {
@@ -396,9 +383,6 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                             <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs" />
                           </label>
                         </div>
-                        <label className="block text-xs font-semibold text-slate-700">Enlace
-                          <input type="url" required value={editUrl} onChange={(e) => setEditUrl(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-mono" />
-                        </label>
                         <label className="block text-xs font-semibold text-slate-700">Descripción
                           <input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs" />
                         </label>
@@ -433,18 +417,9 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                               {ev.description}
                             </p>
                           )}
-                          {ev.url ? (
-                            <a
-                              href={ev.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[11px] font-mono text-indigo-600 hover:underline truncate block mt-0.5 max-w-sm sm:max-w-md"
-                            >
-                              {ev.url}
-                            </a>
-                          ) : (
-                            <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Pendiente de subir a Drive</p>
-                          )}
+                          <p className={`mt-0.5 text-[11px] font-semibold ${ev.url ? 'text-emerald-700' : 'text-amber-700'}`}>
+                            {ev.url ? 'Evidencia guardada' : 'Pendiente de subir'}
+                          </p>
                         </div>
                       </div>
 
@@ -460,15 +435,6 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                           <ExternalLink className="w-3.5 h-3.5" />
                           <span>Abrir</span>
                         </a>}
-
-                        {ev.url && <button
-                          type="button"
-                          onClick={() => handleCopyLink(ev.url, ev.id)}
-                          title="Copiar enlace"
-                          className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
-                        >
-                          {copiedId === ev.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>}
 
                         <button
                           type="button"

@@ -198,7 +198,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
                 onClick={() => onQuickAddEvidence(item)}
                 className="font-bold text-blue-600 hover:underline cursor-pointer text-[11px] shrink-0 ml-2"
               >
-                + Vincular enlace
+                + Subir evidencia
               </button>
             </div>
           )}

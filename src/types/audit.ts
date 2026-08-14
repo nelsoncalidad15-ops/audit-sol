@@ -36,18 +36,6 @@ export interface AuditItem {
   evidences: EvidenceLink[];
 }
 
-export interface AppsScriptConfig {
-  scriptUrl: string;
-  sheetId: string;
-  gid: string;
-  driveFolderId?: string;
-  syncMode: 'direct' | 'appscript' | 'csv';
-  autoSync: boolean;
-  lastSyncTime?: string;
-  lastSyncStatus?: 'idle' | 'success' | 'error' | 'syncing';
-  lastError?: string;
-}
-
 export interface AuditStats {
   totalItems: number;
   compliantCount: number;

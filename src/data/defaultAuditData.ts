@@ -1,9 +1,4 @@
-// Auto-generated default audit data from Google Sheet 12w_E2kt3Rqs9MTreR-Y4zNmZeUFy3yT3B95BKWNcZvc
 import { AuditItem } from "../types/audit";
-
-export const ORIGINAL_SHEET_ID = "12w_E2kt3Rqs9MTreR-Y4zNmZeUFy3yT3B95BKWNcZvc";
-export const ORIGINAL_SHEET_GID = "295935298";
-export const ORIGINAL_SHEET_URL = "https://docs.google.com/spreadsheets/d/12w_E2kt3Rqs9MTreR-Y4zNmZeUFy3yT3B95BKWNcZvc/edit?gid=295935298#gid=295935298";
 
 export const DEFAULT_AUDIT_ITEMS: AuditItem[] = [
   {
@@ -26,7 +21,7 @@ export const DEFAULT_AUDIT_ITEMS: AuditItem[] = [
         "id": "ev-1-1",
         "type": "pdf",
         "title": "Plan de Negocio 2026 Firmado",
-        "url": "https://docs.google.com/viewer?url=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+        "url": "",
         "description": "Documento oficial del Plan de Negocios acordado con importador y firmado por gerencia.",
         "addedAt": "2026-08-01",
         "verified": true
@@ -35,7 +30,7 @@ export const DEFAULT_AUDIT_ITEMS: AuditItem[] = [
         "id": "ev-1-2",
         "type": "sheet",
         "title": "Matriz Objetivos Operativos y Estratégicos",
-        "url": "https://docs.google.com/spreadsheets/d/12w_E2kt3Rqs9MTreR-Y4zNmZeUFy3yT3B95BKWNcZvc/edit",
+        "url": "",
         "description": "Control trimestral de objetivos de ventas y postventa vs resultados reales.",
         "addedAt": "2026-08-05",
         "verified": true
@@ -64,7 +59,7 @@ export const DEFAULT_AUDIT_ITEMS: AuditItem[] = [
         "id": "ev-2-1",
         "type": "sop",
         "title": "Diagrama de Flujo: Comunicación Interna de Objetivos",
-        "url": "https://lucid.app/example-diagram",
+        "url": "",
         "description": "Protocolo de reuniones mensuales de equipo y distribución de metas operativas.",
         "addedAt": "2026-08-06",
         "verified": true
@@ -112,7 +107,7 @@ export const DEFAULT_AUDIT_ITEMS: AuditItem[] = [
         "id": "ev-4-1",
         "type": "web",
         "title": "Portal CEM / SCX - Skoda Customer Experience",
-        "url": "https://cem.skoda-auto.com/dashboard",
+        "url": "",
         "description": "Captura de transmisión diaria DMS de clientes y tasa de resolución en 24h.",
         "addedAt": "2026-08-07",
         "verified": true
@@ -198,7 +193,7 @@ export const DEFAULT_AUDIT_ITEMS: AuditItem[] = [
         "id": "ev-8-1",
         "type": "sheet",
         "title": "Libro de Registro de Reclamaciones y Hot Alerts",
-        "url": "https://docs.google.com/spreadsheets/d/12w_E2kt3Rqs9MTreR-Y4zNmZeUFy3yT3B95BKWNcZvc/edit",
+        "url": "",
         "description": "Muestra de 5 quejas auditadas con trazabilidad de 48h de respuesta.",
         "addedAt": "2026-08-09",
         "verified": true
@@ -284,7 +279,7 @@ export const DEFAULT_AUDIT_ITEMS: AuditItem[] = [
         "id": "ev-12-1",
         "type": "photo",
         "title": "Foto: Área de Separación de Residuos y Bateas",
-        "url": "https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=1200&q=80",
+        "url": "",
         "description": "Evidencia fotográfica de señalización, cubeto antiderrame y techado de residuos peligrosos.",
         "addedAt": "2026-08-10",
         "verified": true

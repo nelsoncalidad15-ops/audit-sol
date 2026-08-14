@@ -1,18 +1,13 @@
-import { AuditItem, AppsScriptConfig, AuditStats, EvidenceType } from '../types/audit';
-import { DEFAULT_AUDIT_ITEMS, ORIGINAL_SHEET_ID, ORIGINAL_SHEET_GID } from '../data/defaultAuditData';
+import { AuditItem, AuditStats, EvidenceType } from '../types/audit';
+import { DEFAULT_AUDIT_ITEMS } from '../data/defaultAuditData';
 
 const STORAGE_KEY_AUDIT_ITEMS = 'audit_evidence_portal_items_v1';
-const STORAGE_KEY_CONFIG = 'audit_evidence_portal_config_v1';
+const DEMO_EVIDENCE_IDS = new Set(['ev-1-1', 'ev-1-2', 'ev-2-1', 'ev-4-1', 'ev-8-1', 'ev-12-1']);
 
-export const DEFAULT_CONFIG: AppsScriptConfig = {
-  scriptUrl: '',
-  sheetId: ORIGINAL_SHEET_ID,
-  gid: ORIGINAL_SHEET_GID,
-  driveFolderId: '',
-  syncMode: 'csv',
-  autoSync: true,
-  lastSyncStatus: 'idle',
-};
+const withoutDemoEvidences = (items: AuditItem[]): AuditItem[] => items.map((item) => ({
+  ...item,
+  evidences: (item.evidences || []).filter((evidence) => !DEMO_EVIDENCE_IDS.has(evidence.id)),
+}));
 
 export const getStoredAuditItems = (): AuditItem[] => {
   try {
@@ -20,13 +15,13 @@ export const getStoredAuditItems = (): AuditItem[] => {
     if (data) {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return withoutDemoEvidences(parsed);
       }
     }
   } catch (err) {
     console.error('Error loading audit items from localStorage:', err);
   }
-  return DEFAULT_AUDIT_ITEMS;
+  return withoutDemoEvidences(DEFAULT_AUDIT_ITEMS);
 };
 
 export const saveAuditItems = (items: AuditItem[]): void => {
@@ -34,26 +29,6 @@ export const saveAuditItems = (items: AuditItem[]): void => {
     localStorage.setItem(STORAGE_KEY_AUDIT_ITEMS, JSON.stringify(items));
   } catch (err) {
     console.error('Error saving audit items to localStorage:', err);
-  }
-};
-
-export const getStoredConfig = (): AppsScriptConfig => {
-  try {
-    const data = localStorage.getItem(STORAGE_KEY_CONFIG);
-    if (data) {
-      return { ...DEFAULT_CONFIG, ...JSON.parse(data) };
-    }
-  } catch (err) {
-    console.error('Error loading config from localStorage:', err);
-  }
-  return DEFAULT_CONFIG;
-};
-
-export const saveConfig = (config: AppsScriptConfig): void => {
-  try {
-    localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
-  } catch (err) {
-    console.error('Error saving config to localStorage:', err);
   }
 };
 
