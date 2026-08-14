@@ -168,6 +168,12 @@ export default function App() {
     sortBy,
   ]);
 
+  // La vista de tarjetas es un recorrido visual completo y no hereda filtros de la matriz.
+  const cardItems = useMemo(
+    () => [...items].sort((a, b) => a.rowNumber - b.rowNumber),
+    [items],
+  );
+
   // Handlers
   const handleOpenEvidenceModal = (item: AuditItem) => {
     setSelectedItemForModal(item);
@@ -572,18 +578,15 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Reset */}
-              {(searchQuery || selectedChapter !== 'all' || selectedEvidenceType !== 'all' || selectedStatusFilter !== 'all' || evidenceCoverageFilter !== 'all' || areaFilter !== 'all') && (
-                <button
-                  type="button"
-                  onClick={handleResetFilters}
-                  className="p-1 px-2 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold cursor-pointer flex items-center gap-1"
-                  title="Limpiar filtros"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Limpiar</span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="p-1 px-2 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold cursor-pointer flex items-center gap-1"
+                title="Quitar todos los filtros"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Quitar filtros</span>
+              </button>
             </div>
           </div>
 
@@ -596,6 +599,38 @@ export default function App() {
                 onOpenEvidenceManager={handleOpenEvidenceModal}
                 onPreviewEvidence={setPreviewEvidence}
               />
+            ) : viewMode === 'cards' ? (
+              <div className="p-4 space-y-8">
+                {chapters.map((chapter) => {
+                  const chapterItems = cardItems.filter((item) => item.chapter === chapter);
+                  const ChapterIcon = CHAPTER_ICONS[chapter] || BookOpen;
+                  return (
+                    <section key={chapter}>
+                      <div className="mb-3 flex items-center gap-2 border-b border-slate-200 pb-2">
+                        <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-50 text-blue-700">
+                          <ChapterIcon className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <h2 className="text-sm font-bold text-slate-900">{chapter}</h2>
+                          <p className="text-[11px] text-slate-500">{chapterItems.length} criterios</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {chapterItems.map((item) => (
+                          <AuditItemCard
+                            key={item.id}
+                            item={item}
+                            onOpenEvidenceModal={handleOpenEvidenceModal}
+                            onQuickAddEvidence={handleQuickAddEvidence}
+                            onUpdateStatus={handleUpdateStatus}
+                            onQuickPreviewEvidence={(ev) => setPreviewEvidence(ev)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
             ) : filteredItems.length > 0 ? (
               viewMode === 'table' ? (
                 /* HIGH DENSITY TABLE VIEW */
@@ -783,7 +818,7 @@ export default function App() {
 
         <div className="flex items-center gap-3">
           <span className="font-bold text-gray-800">
-            {filteredItems.length} / {items.length} Criterios
+            {viewMode === 'cards' ? items.length : filteredItems.length} / {items.length} Criterios
           </span>
         </div>
       </footer>
