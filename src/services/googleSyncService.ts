@@ -13,8 +13,16 @@ async function callSecureAuditApi(payload: Record<string, unknown>) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  const result = await response.json();
-  if (!response.ok || !result.success) throw new Error(result.error || 'No se pudo guardar la auditoría.');
+  const raw = await response.text();
+  let result: Record<string, any> = {};
+  try {
+    result = raw ? JSON.parse(raw) : {};
+  } catch {
+    // A missing Netlify function can return an HTML 404 page instead of JSON.
+  }
+  if (!response.ok || !result.success) {
+    throw new Error(result.error || 'El servicio de carga no está disponible. Esperá unos segundos y reintentá.');
+  }
   return result;
 }
 

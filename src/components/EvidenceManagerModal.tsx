@@ -49,6 +49,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   const [newFile, setNewFile] = useState<File | null>(null);
   const [pendingFiles, setPendingFiles] = useState<Record<string, File>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
@@ -137,6 +138,8 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   const handleSave = async () => {
     setIsSaving(true);
     setErrorMsg('');
+    const pendingCount = Object.keys(pendingFiles).length;
+    setSaveMessage(pendingCount ? `Subiendo ${pendingCount} archivo${pendingCount === 1 ? '' : 's'}...` : 'Guardando cambios...');
     try {
       let finalEvidences = [...(formData.evidences || [])];
       for (const [evidenceId, file] of Object.entries(pendingFiles) as Array<[string, File]>) {
@@ -151,6 +154,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
       setErrorMsg(error.message || 'No se pudo guardar la evidencia en Google Drive.');
     } finally {
       setIsSaving(false);
+      setSaveMessage('');
     }
   };
 
@@ -171,6 +175,12 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                 {item.chapter} › {item.section}
               </p>
             </div>
+
+            {errorMsg && !showAddForm && (
+              <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
+                {errorMsg}
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -541,7 +551,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
             className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors cursor-pointer disabled:opacity-60"
           >
             <Save className="w-4 h-4" />
-            <span>{isSaving ? 'Subiendo a Drive...' : 'Guardar Cambios'}</span>
+            <span>{isSaving ? saveMessage || 'Subiendo a Drive...' : Object.keys(pendingFiles).length ? 'Subir y Guardar' : 'Guardar Cambios'}</span>
           </button>
         </div>
       </div>
