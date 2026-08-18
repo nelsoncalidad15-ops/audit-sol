@@ -13,7 +13,7 @@ import {
   Clock, 
   XCircle, 
   MinusCircle, 
-  HelpCircle,
+  CircleDashed,
   FileCheck2,
   Edit
 } from 'lucide-react';
@@ -69,7 +69,7 @@ export const STATUS_CONFIG: Record<
     text: 'text-orange-700',
     border: 'border-orange-200',
     pillClass: 'bg-orange-100 text-orange-700 border-orange-200',
-    icon: HelpCircle,
+    icon: CircleDashed,
   },
 };
 
@@ -127,7 +127,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
               <option value="en_progreso">⏳ En Proceso</option>
               <option value="no_cumplida">✗ No Cumple</option>
               <option value="no_aplica">⊘ No Aplica</option>
-              <option value="pendiente">? Pendiente</option>
+              <option value="pendiente">Pendiente</option>
             </select>
 
             <button

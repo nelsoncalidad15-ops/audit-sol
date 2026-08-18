@@ -80,6 +80,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<ComplianceStatus | 'all'>('all');
   const [evidenceCoverageFilter, setEvidenceCoverageFilter] = useState<'all' | 'with_evidence' | 'missing_evidence'>('all');
   const [areaFilter, setAreaFilter] = useState<'all' | 'pv' | 'v'>('all');
+  const [responsibleAreaFilter, setResponsibleAreaFilter] = useState('all');
   const [sortBy, setSortBy] = useState<'row' | 'code' | 'evidences' | 'status'>('row');
 
   // Modals state
@@ -114,6 +115,11 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
       (ch): ch is string => Boolean(ch)
     );
   }, [items]);
+
+  const responsibleAreas = useMemo(() => {
+    if (activeAuditKey !== 'pcgc') return [];
+    return Array.from(new Set<string>(items.map((item) => item.question.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  }, [activeAuditKey, items]);
 
   // Filtered & Sorted items
   const filteredItems = useMemo(() => {
@@ -163,9 +169,13 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
           return false;
         }
 
-        // Area filter (PV / V)
-        if (areaFilter === 'pv' && !item.pv) return false;
-        if (areaFilter === 'v' && !item.v) return false;
+        // PCGC se organiza por el responsable/área de cada criterio; ISO conserva PV/V.
+        if (activeAuditKey === 'pcgc') {
+          if (responsibleAreaFilter !== 'all' && item.question !== responsibleAreaFilter) return false;
+        } else {
+          if (areaFilter === 'pv' && !item.pv) return false;
+          if (areaFilter === 'v' && !item.v) return false;
+        }
 
         return true;
       })
@@ -183,6 +193,8 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     selectedStatusFilter,
     evidenceCoverageFilter,
     areaFilter,
+    responsibleAreaFilter,
+    activeAuditKey,
     sortBy,
   ]);
 
@@ -260,6 +272,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     setSelectedStatusFilter('all');
     setEvidenceCoverageFilter('all');
     setAreaFilter('all');
+    setResponsibleAreaFilter('all');
     setSortBy('row');
   };
 
@@ -542,7 +555,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
                 <option value="en_progreso">⏳ En Proceso ({stats.inProgressCount})</option>
                 <option value="no_cumplida">✗ No Cumple ({stats.nonCompliantCount})</option>
                 <option value="no_aplica">⊘ No Aplica ({stats.notApplicableCount})</option>
-                <option value="pendiente">? Pendiente ({stats.pendingCount})</option>
+                <option value="pendiente">Pendiente ({stats.pendingCount})</option>
               </select>
 
               {viewMode === 'table' && <>
@@ -557,16 +570,26 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
                 <option value="missing_evidence">⚠️ Sin Evidencia ({stats.totalItems - stats.withEvidenceCount})</option>
               </select>
 
-              {/* Area Filter */}
-              <select
-                value={areaFilter}
-                onChange={(e) => setAreaFilter(e.target.value as any)}
-                className="px-2 py-1 rounded border border-gray-300 bg-white font-medium text-gray-700 cursor-pointer text-xs focus:border-blue-500 outline-none"
-              >
-                <option value="all">Área: PV y V</option>
-                <option value="pv">Posventa (PV)</option>
-                <option value="v">Ventas (V)</option>
-              </select>
+              {activeAuditKey === 'pcgc' ? (
+                <select
+                  value={responsibleAreaFilter}
+                  onChange={(e) => setResponsibleAreaFilter(e.target.value)}
+                  className="px-2 py-1 rounded border border-violet-200 bg-violet-50/40 font-medium text-violet-950 cursor-pointer text-xs focus:border-violet-500 outline-none"
+                >
+                  <option value="all">Responsable: Todos</option>
+                  {responsibleAreas.map((area) => <option key={area} value={area}>{area}</option>)}
+                </select>
+              ) : (
+                <select
+                  value={areaFilter}
+                  onChange={(e) => setAreaFilter(e.target.value as any)}
+                  className="px-2 py-1 rounded border border-gray-300 bg-white font-medium text-gray-700 cursor-pointer text-xs focus:border-blue-500 outline-none"
+                >
+                  <option value="all">Área: PV y V</option>
+                  <option value="pv">Posventa (PV)</option>
+                  <option value="v">Ventas (V)</option>
+                </select>
+              )}
 
               {/* Sort Order */}
               <div className="flex items-center gap-1 bg-gray-50 border border-gray-300 rounded px-2 py-1 text-xs">
@@ -755,7 +778,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
                                 <option value="en_progreso">⏳ En Proceso</option>
                                 <option value="no_cumplida">✗ No Cumple</option>
                                 <option value="no_aplica">⊘ No Aplica</option>
-                                <option value="pendiente">? Pendiente</option>
+                                <option value="pendiente">Pendiente</option>
                               </select>
                             </td>
 

@@ -615,7 +615,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                   <option value="en_progreso">⏳ En Progreso (Evidencia Parcial)</option>
                   <option value="no_cumplida">✗ No Cumplida (No Conforme)</option>
                   <option value="no_aplica">⊘ No Aplica</option>
-                  <option value="pendiente">? Pendiente de Revisión</option>
+                  <option value="pendiente">Pendiente de Revisión</option>
                 </select>
               </div>
 
