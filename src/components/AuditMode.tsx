@@ -19,6 +19,7 @@ interface AuditModeProps {
   onUpdateStatus: (itemId: string, status: ComplianceStatus) => void;
   onOpenEvidenceManager: (item: AuditItem) => void;
   onPreviewEvidence: (evidence: EvidenceLink) => void;
+  readOnly?: boolean;
 }
 
 const statusActions: Array<{ status: ComplianceStatus; icon: React.ComponentType<{ className?: string }> }> = [
@@ -32,6 +33,7 @@ export const AuditMode: React.FC<AuditModeProps> = ({
   onUpdateStatus,
   onOpenEvidenceManager,
   onPreviewEvidence,
+  readOnly = false,
 }) => {
   const [activeId, setActiveId] = useState<string | null>(items[0]?.id ?? null);
 
@@ -136,6 +138,7 @@ export const AuditMode: React.FC<AuditModeProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenEvidenceManager(item)}
+                  disabled={readOnly}
                   className="inline-flex items-center gap-1.5 rounded border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100"
                 >
                   <FilePlus2 className="w-3.5 h-3.5" /> Vincular evidencia
@@ -172,6 +175,7 @@ export const AuditMode: React.FC<AuditModeProps> = ({
                       key={status}
                       type="button"
                       onClick={() => onUpdateStatus(item.id, status)}
+                      disabled={readOnly}
                       className={`inline-flex items-center gap-1.5 rounded border px-3 py-2 text-xs font-bold transition-colors ${config.pillClass} ${item.status === status ? 'ring-2 ring-offset-1 ring-slate-400' : 'hover:brightness-95'}`}
                     >
                       <Icon className="w-4 h-4" /> {config.label}

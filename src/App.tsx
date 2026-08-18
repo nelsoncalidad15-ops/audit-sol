@@ -8,9 +8,13 @@ import {
 import { 
   getStoredAuditItems, 
   saveAuditItems, 
-  calculateStats
+  calculateStats,
+  getAuditRunState,
+  saveAuditRunState,
+  type AuditRunState
 } from './services/storageService';
 import { pushAllToAppsScript } from './services/googleSyncService';
+import { getAuditDefinition, getAuditRunLabel, getAuditRunStorageKey, type AuditRunContext } from './data/auditConfig';
 import { Header } from './components/Header';
 import { AuditItemCard, STATUS_CONFIG } from './components/AuditItemCard';
 import { EvidenceButton } from './components/EvidenceTypeBadge';
@@ -52,9 +56,19 @@ const CHAPTER_ICONS: Record<string, React.ComponentType<{ className?: string }>>
   '4. Procesos de venta': ShoppingBag,
 };
 
-export default function App() {
+interface AppProps {
+  auditRun: AuditRunContext;
+  onChangeAudit: () => void;
+}
+
+export default function App({ auditRun, onChangeAudit }: AppProps) {
+  const activeAuditKey = auditRun.auditKey;
+  const activeAudit = getAuditDefinition(activeAuditKey);
+  const storageScope = getAuditRunStorageKey(auditRun);
   // Main state
-  const [items, setItems] = useState<AuditItem[]>(() => getStoredAuditItems());
+  const [items, setItems] = useState<AuditItem[]>(() => getStoredAuditItems(activeAuditKey, storageScope));
+  const [auditState, setAuditState] = useState<AuditRunState>(() => getAuditRunState(storageScope));
+  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
 
   // View Mode: table (high-density) or cards
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'audit'>('table');
@@ -84,8 +98,12 @@ export default function App() {
 
   // Sync to local storage on change
   useEffect(() => {
-    saveAuditItems(items);
-  }, [items]);
+    saveAuditItems(items, activeAuditKey, storageScope);
+  }, [items, activeAuditKey, storageScope]);
+
+  useEffect(() => {
+    saveAuditRunState(storageScope, auditState);
+  }, [auditState, storageScope]);
 
   // Derived statistics
   const stats = useMemo(() => calculateStats(items), [items]);
@@ -176,39 +194,64 @@ export default function App() {
 
   // Handlers
   const handleOpenEvidenceModal = (item: AuditItem) => {
+    if (auditState.closed) return showToast('Esta auditoría está cerrada. Reabrila para hacer cambios.', 'info');
     setSelectedItemForModal(item);
     setIsEvidenceModalOpen(true);
   };
 
   const handleQuickAddEvidence = (item: AuditItem) => {
+    if (auditState.closed) return showToast('Esta auditoría está cerrada. Reabrila para hacer cambios.', 'info');
     setSelectedItemForModal(item);
     setIsEvidenceModalOpen(true);
   };
 
   const handleSaveItem = (updatedItem: AuditItem) => {
+    if (auditState.closed) return showToast('Esta auditoría está cerrada. Reabrila para hacer cambios.', 'info');
     setItems((prev) => prev.map((it) => (it.id === updatedItem.id ? updatedItem : it)));
     showToast(`Evidencias actualizadas para criterio ${updatedItem.code}`);
   };
 
   const handleUpdateStatus = (itemId: string, status: ComplianceStatus) => {
+    if (auditState.closed) return showToast('Esta auditoría está cerrada. Reabrila para hacer cambios.', 'info');
     setItems((prev) =>
       prev.map((it) => (it.id === itemId ? { ...it, status, lastUpdated: new Date().toISOString().split('T')[0] } : it))
     );
     showToast(`Estado actualizado`);
   };
 
+  const handleToggleAuditClosed = () => {
+    if (!auditState.closed) {
+      const confirmClose = window.confirm('¿Cerrar esta auditoría? Se bloquearán los cambios, pero podrás reabrirla cuando lo necesites.');
+      if (!confirmClose) return;
+      setAuditState({ closed: true, closedAt: new Date().toISOString() });
+      showToast('Auditoría cerrada. Podrás reabrirla cuando lo necesites.', 'info');
+      return;
+    }
+    setAuditState({ closed: false });
+    showToast('Auditoría reabierta para editar.');
+  };
+
   // Los cambios se guardan al instante y, tras una breve pausa, se respaldan de forma segura.
   useEffect(() => {
     const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-    if (isLocal) return;
+    if (isLocal) {
+      setSaveState('saved');
+      return;
+    }
 
     const timer = window.setTimeout(async () => {
-      const res = await pushAllToAppsScript(items);
-      if (!res.success) showToast('No se pudo guardar el cambio de forma segura.', 'error');
+      setSaveState('saving');
+      const res = await pushAllToAppsScript(items, activeAuditKey, auditRun, auditState);
+      if (!res.success) {
+        setSaveState('error');
+        showToast('No se pudo guardar el cambio de forma segura.', 'error');
+      } else {
+        setSaveState('saved');
+      }
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [items]);
+  }, [items, activeAuditKey, auditRun, auditState]);
 
   const handleResetFilters = () => {
     setSearchQuery('');
@@ -221,7 +264,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#F0F2F5] text-[#1A1C1E] font-sans overflow-hidden">
+    <div className="flex flex-col h-screen bg-[#f6f8fc] text-slate-900 font-sans overflow-hidden">
       {/* Toast notification */}
       {toast && (
         <div className="fixed bottom-10 right-6 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
@@ -242,19 +285,19 @@ export default function App() {
       )}
 
       {/* 1. High Density Top Header (#1A1C1E) */}
-      <Header />
+      <Header auditTitle={activeAudit.shortName} auditRunLabel={getAuditRunLabel(auditRun)} onChangeAudit={onChangeAudit} auditClosed={auditState.closed} saveState={saveState} onToggleAuditClosed={handleToggleAuditClosed} />
 
       {/* 2. Main High Density Body Container (Sidebar + High-Density Content Area) */}
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR: Categories, Evidence Types & Stats */}
         {viewMode === 'table' && (
-        <aside className="w-64 sm:w-72 bg-white border-r border-gray-200 flex flex-col shrink-0 overflow-y-auto">
+        <aside className="w-64 sm:w-72 bg-white/95 border-r border-slate-200/80 flex flex-col shrink-0 overflow-y-auto">
           {/* Quick Primary Actions */}
           <div className="p-3 border-b border-gray-200 space-y-2">
             <button
               type="button"
               onClick={() => setIsReportModalOpen(true)}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors"
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-colors"
             >
               <FileText className="w-3.5 h-3.5" />
               <span>Generar Dossier de Evidencias</span>
@@ -266,7 +309,7 @@ export default function App() {
           <div className="py-2">
             <div className="px-3 pb-1.5 flex items-center justify-between">
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                Categorías de Auditoría
+                {activeAudit.shortName} · Categorías
               </span>
               <span className="text-[10px] font-mono text-gray-400">
                 {items.length} ítems
@@ -591,23 +634,24 @@ export default function App() {
           </div>
 
           {/* MAIN SCROLLABLE CONTENT (Table or Cards) */}
-          <div className={`flex-1 ${viewMode === 'audit' ? 'flex overflow-hidden' : 'overflow-y-auto bg-gray-50/50'}`}>
+          <div className={`flex-1 ${viewMode === 'audit' ? 'flex overflow-hidden' : 'overflow-y-auto bg-slate-50/60'}`}>
             {viewMode === 'audit' ? (
               <AuditMode
                 items={filteredItems}
                 onUpdateStatus={handleUpdateStatus}
                 onOpenEvidenceManager={handleOpenEvidenceModal}
                 onPreviewEvidence={setPreviewEvidence}
+                readOnly={auditState.closed}
               />
             ) : viewMode === 'cards' ? (
-              <div className="p-4 space-y-8">
+              <div className="p-5 space-y-8">
                 {chapters.map((chapter) => {
                   const chapterItems = cardItems.filter((item) => item.chapter === chapter);
                   const ChapterIcon = CHAPTER_ICONS[chapter] || BookOpen;
                   return (
                     <section key={chapter}>
-                      <div className="mb-3 flex items-center gap-2 border-b border-slate-200 pb-2">
-                        <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-50 text-blue-700">
+                      <div className="mb-3 flex items-center gap-2 border-b border-slate-200/80 pb-2">
+                        <div className="grid h-8 w-8 place-items-center rounded-xl bg-blue-50 text-blue-700">
                           <ChapterIcon className="h-4 w-4" />
                         </div>
                         <div>
@@ -624,6 +668,7 @@ export default function App() {
                             onQuickAddEvidence={handleQuickAddEvidence}
                             onUpdateStatus={handleUpdateStatus}
                             onQuickPreviewEvidence={(ev) => setPreviewEvidence(ev)}
+                            readOnly={auditState.closed}
                           />
                         ))}
                       </div>
@@ -702,6 +747,7 @@ export default function App() {
                               <select
                                 value={item.status}
                                 onChange={(e) => handleUpdateStatus(item.id, e.target.value as ComplianceStatus)}
+                                disabled={auditState.closed}
                                 aria-label="Cambiar estado"
                                 className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border cursor-pointer focus:ring-1 focus:ring-blue-500 focus:outline-none ${statusCfg.pillClass}`}
                               >
@@ -776,6 +822,7 @@ export default function App() {
                       onQuickAddEvidence={handleQuickAddEvidence}
                       onUpdateStatus={handleUpdateStatus}
                       onQuickPreviewEvidence={(ev) => setPreviewEvidence(ev)}
+                      readOnly={auditState.closed}
                     />
                   ))}
                 </div>
@@ -829,6 +876,8 @@ export default function App() {
         isOpen={isEvidenceModalOpen}
         onClose={() => setIsEvidenceModalOpen(false)}
         onSaveItem={handleSaveItem}
+        auditKey={activeAuditKey}
+        auditRun={auditRun}
       />
 
       <AuditReportModal
@@ -836,6 +885,8 @@ export default function App() {
         onClose={() => setIsReportModalOpen(false)}
         items={items}
         stats={stats}
+        auditName={`${activeAudit.shortName} · ${getAuditRunLabel(auditRun)}`}
+        auditClosed={auditState.closed}
       />
 
       <QuickViewerModal

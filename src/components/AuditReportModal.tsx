@@ -18,6 +18,8 @@ interface AuditReportModalProps {
   onClose: () => void;
   items: AuditItem[];
   stats: AuditStats;
+  auditName: string;
+  auditClosed: boolean;
 }
 
 export const AuditReportModal: React.FC<AuditReportModalProps> = ({
@@ -25,6 +27,8 @@ export const AuditReportModal: React.FC<AuditReportModalProps> = ({
   onClose,
   items,
   stats,
+  auditName,
+  auditClosed,
 }) => {
   if (!isOpen) return null;
 
@@ -56,9 +60,7 @@ export const AuditReportModal: React.FC<AuditReportModalProps> = ({
               <h2 className="text-base font-bold text-white">
                 Dossier Ejecutivo de Evidencias y Auditoría
               </h2>
-              <p className="text-xs text-slate-300">
-                Informe consolidado de conformidad con enlaces directos a evidencias
-              </p>
+              <p className="text-xs text-slate-300">{auditName} · {auditClosed ? 'Auditoría cerrada' : 'Auditoría en curso'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -118,7 +120,7 @@ export const AuditReportModal: React.FC<AuditReportModalProps> = ({
                   Informe de Conformidad y Dossier de Evidencias
                 </h1>
                 <p className="text-xs text-slate-600 mt-1">
-                  Sistema de Gestión de Calidad, Instalaciones, Posventa y Procesos de Venta
+                  {auditName} · {auditClosed ? 'Auditoría cerrada' : 'Auditoría en curso'}
                 </p>
               </div>
               <div className="text-right text-xs">

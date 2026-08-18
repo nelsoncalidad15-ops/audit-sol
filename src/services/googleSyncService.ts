@@ -1,4 +1,6 @@
 import type { AuditItem, EvidenceLink } from '../types/audit';
+import type { AuditKey, AuditRunContext } from '../data/auditConfig';
+import type { AuditRunState } from './storageService';
 
 export interface SyncResult {
   success: boolean;
@@ -30,6 +32,8 @@ export async function uploadEvidenceToAppsScript(
   item: AuditItem,
   evidence: Pick<EvidenceLink, 'id' | 'type' | 'title' | 'description' | 'addedAt'>,
   file: File,
+  auditKey: AuditKey = 'iso9001',
+  auditRun?: AuditRunContext,
 ): Promise<EvidenceLink> {
   const maxUploadBytes = 4 * 1024 * 1024;
   if (file.size > maxUploadBytes) {
@@ -45,6 +49,8 @@ export async function uploadEvidenceToAppsScript(
 
   const result = await callSecureAuditApi({
     action: 'upload_evidence',
+    auditKey,
+    auditRun,
     item: { code: item.code, chapter: item.chapter },
     evidence,
     file: { name: file.name, mimeType: file.type || 'application/octet-stream', base64: fileData },
@@ -53,10 +59,13 @@ export async function uploadEvidenceToAppsScript(
   return result.evidence as EvidenceLink;
 }
 
-export async function pushAllToAppsScript(items: AuditItem[]): Promise<SyncResult> {
+export async function pushAllToAppsScript(items: AuditItem[], auditKey: AuditKey = 'iso9001', auditRun?: AuditRunContext, auditState?: AuditRunState): Promise<SyncResult> {
   try {
     const data = await callSecureAuditApi({
       action: 'save_all',
+      auditKey,
+      auditRun,
+      auditState,
       items: items.map(({ id, code, chapter, section, requirement, pv, v, status, finding, evidences }) => ({
         id, code, chapter, section, requirement, pv, v, status, finding, evidences,
       })),

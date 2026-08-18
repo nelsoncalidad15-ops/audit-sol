@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+:root {
+  color: #0f172a;
+  background: #f6f8fc;
+}
+
+* {
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-width: thin;
+}
+
+::selection {
+  background: #dbeafe;
+  color: #0f172a;
+}
+
 @media print {
   @page {
     margin: 1.5cm;

@@ -6,6 +6,7 @@ import {
   ComplianceStatus
 } from '../types/audit';
 import { uploadEvidenceToAppsScript } from '../services/googleSyncService';
+import type { AuditKey, AuditRunContext } from '../data/auditConfig';
 import { EVIDENCE_CONFIG } from './EvidenceTypeBadge';
 import { 
   X, 
@@ -30,6 +31,8 @@ interface EvidenceManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaveItem: (updatedItem: AuditItem) => void;
+  auditKey?: AuditKey;
+  auditRun?: AuditRunContext;
 }
 
 export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
@@ -37,6 +40,8 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   isOpen,
   onClose,
   onSaveItem,
+  auditKey = 'iso9001' as AuditKey,
+  auditRun,
 }) => {
   if (!isOpen || !item) return null;
 
@@ -86,7 +91,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
     setIsSaving(true);
     setSaveMessage('Subiendo archivo...');
     try {
-      const uploaded = await uploadEvidenceToAppsScript(item, evidence, file);
+      const uploaded = await uploadEvidenceToAppsScript(item, evidence, file, auditKey, auditRun);
       const updatedItem: AuditItem = {
         ...formData,
         evidences: [...(formData.evidences || []), uploaded],
@@ -169,6 +174,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   };
 
   const handleDeleteEvidence = (evidenceId: string) => {
+    if (!window.confirm('Se quitará este vínculo de la auditoría. El archivo original permanecerá guardado en Drive.')) return;
     setFormData((prev) => ({
       ...prev,
       evidences: (prev.evidences || []).filter((e) => e.id !== evidenceId),
@@ -212,7 +218,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
       for (const [evidenceId, file] of Object.entries(pendingFiles) as Array<[string, File]>) {
         const evidence = finalEvidences.find((itemEvidence) => itemEvidence.id === evidenceId);
         if (!evidence) continue;
-        const uploadedEvidence = await uploadEvidenceToAppsScript(item, evidence, file);
+        const uploadedEvidence = await uploadEvidenceToAppsScript(item, evidence, file, auditKey, auditRun);
         finalEvidences = finalEvidences.map((itemEvidence) => itemEvidence.id === evidenceId ? uploadedEvidence : itemEvidence);
       }
       onSaveItem({ ...formData, evidences: finalEvidences, lastUpdated: new Date().toISOString().split('T')[0] });
@@ -566,7 +572,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleDeleteEvidence(ev.id)}
-                          title="Eliminar evidencia"
+                          title="Quitar vínculo (el archivo permanece en Drive)"
                           className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

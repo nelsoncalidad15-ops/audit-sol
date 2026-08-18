@@ -8,6 +8,23 @@ const HISTORY_SHEET = 'HISTORIAL_AUDITORIAS';
 const EVIDENCE_SHEET = 'EVIDENCIAS';
 const DRIVE_ROOT_FOLDER = 'Auditoría Calidad Autosol';
 const DRIVE_ROOT_FOLDER_ID = '';
+// Se crea dentro de la carpeta raíz configurada y concentra todas las evidencias.
+const AUDIT_CONFIG = {
+  iso9001: {
+    name: 'ISO 9001',
+    driveFolder: 'ISO 9001 Evidencias',
+    evaluationSheet: EVALUATION_SHEET,
+    historySheet: HISTORY_SHEET,
+    evidenceSheet: EVIDENCE_SHEET
+  },
+  pcgc: {
+    name: 'F21 PCGC',
+    driveFolder: 'F21 PCGC Evidencias',
+    evaluationSheet: 'PCGC_EVALUACION',
+    historySheet: 'PCGC_HISTORIAL',
+    evidenceSheet: 'PCGC_EVIDENCIAS'
+  }
+};
 
 function doGet() {
   return json_({ success: false, error: 'Método no autorizado.' });
@@ -17,15 +34,17 @@ function doPost(e) {
   try {
     const request = JSON.parse(e.postData.contents || '{}');
     if (!isAuthorized_(request.token)) return json_({ success: false, error: 'No autorizado.' });
+    const audit = getAuditConfig_(request.auditKey);
+    const auditRun = getAuditRun_(request, audit);
     if (request.action === 'upload_evidence') {
-      return uploadEvidence_(request);
+      return uploadEvidence_(request, audit, auditRun);
     }
     const items = request.items || [];
     const now = new Date();
     const dateText = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
-    const evaluation = getEvaluationSheet_();
-    const history = getHistorySheet_();
-    const evidenceSheet = getEvidenceSheet_();
+    const evaluation = getEvaluationSheet_(auditRun.sheetPrefix + '_EVALUACION');
+    const history = getHistorySheet_(auditRun.sheetPrefix + '_HISTORIAL');
+    const evidenceSheet = getEvidenceSheet_(auditRun.sheetPrefix + '_EVIDENCIAS');
 
     evaluation.clearContents();
     evaluation.getRange(1, 1, 1, 12).setValues([[
@@ -101,7 +120,7 @@ function doPost(e) {
       items.length ? Math.round((totals.cumplida / items.length) * 100) + '%' : '0%',
       totals.evidences,
       request.auditorName || 'Equipo de Calidad',
-      'Sincronización automática desde la aplicación'
+      audit.name + ' · ' + auditRun.label + ' · ' + (request.auditState && request.auditState.closed ? 'Auditoría cerrada' : 'Auditoría en curso') + ' · Sincronización automática desde la aplicación'
     ]);
 
     return json_({ success: true, message: 'Auditoría sincronizada', timestamp: now.toISOString() });
@@ -110,18 +129,18 @@ function doPost(e) {
   }
 }
 
-function getEvaluationSheet_() {
+function getEvaluationSheet_(sheetName) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = spreadsheet.getSheetByName(EVALUATION_SHEET);
-  if (!sheet) sheet = spreadsheet.insertSheet(EVALUATION_SHEET);
+  let sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) sheet = spreadsheet.insertSheet(sheetName);
   return sheet;
 }
 
-function getHistorySheet_() {
+function getHistorySheet_(sheetName) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = spreadsheet.getSheetByName(HISTORY_SHEET);
+  let sheet = spreadsheet.getSheetByName(sheetName);
   if (!sheet) {
-    sheet = spreadsheet.insertSheet(HISTORY_SHEET);
+    sheet = spreadsheet.insertSheet(sheetName);
     sheet.appendRow([
       'FECHA / HORA', 'TOTAL ÍTEMS', 'CUMPLIDAS', 'NO CUMPLIDAS',
       'EN PROCESO', 'NO APLICA', '% CUMPLIMIENTO', 'EVIDENCIAS', 'AUDITOR', 'NOTAS'
@@ -132,14 +151,14 @@ function getHistorySheet_() {
   return sheet;
 }
 
-function getEvidenceSheet_() {
+function getEvidenceSheet_(sheetName) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = spreadsheet.getSheetByName(EVIDENCE_SHEET);
-  if (!sheet) sheet = spreadsheet.insertSheet(EVIDENCE_SHEET);
+  let sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) sheet = spreadsheet.insertSheet(sheetName);
   return sheet;
 }
 
-function uploadEvidence_(request) {
+function uploadEvidence_(request, audit, auditRun) {
   const file = request.file || {};
   const evidence = request.evidence || {};
   const item = request.item || {};
@@ -147,7 +166,7 @@ function uploadEvidence_(request) {
     return json_({ success: false, error: 'Faltan los datos del archivo o del criterio.' });
   }
 
-  const root = getAuditRootFolder_(request.driveFolderId);
+  const root = getAuditRootFolder_(request.driveFolderId, audit.driveFolder, auditRun);
   const criterionFolder = getOrCreateFolder_(sanitizeFolderName_(item.code + ' - ' + (item.chapter || 'Evidencias')), root);
   const blob = Utilities.newBlob(Utilities.base64Decode(file.base64), file.mimeType || 'application/octet-stream', file.name);
   const driveFile = criterionFolder.createFile(blob);
@@ -172,14 +191,40 @@ function getOrCreateFolder_(name, parent) {
   return folders.hasNext() ? folders.next() : (parent ? parent.createFolder(name) : DriveApp.createFolder(name));
 }
 
-function getAuditRootFolder_(configuredFolder) {
+function getAuditRootFolder_(configuredFolder, evidenceFolder, auditRun) {
   const storedFolder = PropertiesService.getScriptProperties().getProperty('DRIVE_ROOT_FOLDER_ID');
   const rawFolder = String(configuredFolder || storedFolder || DRIVE_ROOT_FOLDER_ID || '').trim();
   const matches = rawFolder.match(/folders\/([^/?]+)/);
   const folderId = matches ? matches[1] : rawFolder;
-  return folderId
+  const configuredRoot = folderId
     ? DriveApp.getFolderById(folderId)
     : getOrCreateFolder_(DRIVE_ROOT_FOLDER);
+
+  const evidenceRoot = getOrCreateFolder_(evidenceFolder, configuredRoot);
+  const yearFolder = getOrCreateFolder_(auditRun.year, evidenceRoot);
+  const branchFolder = getOrCreateFolder_(auditRun.branch, yearFolder);
+  return auditRun.cycle ? getOrCreateFolder_(auditRun.cycle, branchFolder) : branchFolder;
+}
+
+function getAuditConfig_(auditKey) {
+  return AUDIT_CONFIG[auditKey] || AUDIT_CONFIG.iso9001;
+}
+
+function getAuditRun_(request, audit) {
+  const input = request.auditRun || {};
+  const branch = input.branch === 'salta' ? 'Salta' : 'Jujuy';
+  const rawYear = String(input.year || new Date().getFullYear());
+  const year = /^20\d{2}$/.test(rawYear) ? rawYear : String(new Date().getFullYear());
+  const allowedCycles = { 'pcgc-1': 'PCGC 1', 'pcgc-2': 'PCGC 2', 'pcgc-3': 'PCGC 3', 'pcgc-4': 'PCGC 4' };
+  const cycle = audit === AUDIT_CONFIG.pcgc ? (allowedCycles[input.cycle] || 'PCGC 1') : '';
+  const cycleSuffix = cycle ? '_' + cycle.replace(' ', '_') : '';
+  return {
+    year: year,
+    branch: branch,
+    cycle: cycle,
+    label: branch + ' · ' + year + (cycle ? ' · ' + cycle : ''),
+    sheetPrefix: (audit === AUDIT_CONFIG.pcgc ? 'PCGC' : 'ISO9001') + '_' + branch.toUpperCase() + '_' + year + cycleSuffix
+  };
 }
 
 function sanitizeFolderName_(name) {

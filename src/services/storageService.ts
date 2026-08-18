@@ -1,7 +1,8 @@
 import { AuditItem, AuditStats, EvidenceType } from '../types/audit';
-import { DEFAULT_AUDIT_ITEMS } from '../data/defaultAuditData';
+import { getAuditDefinition, type AuditKey } from '../data/auditConfig';
 
 const STORAGE_KEY_AUDIT_ITEMS = 'audit_evidence_portal_items_v1';
+const STORAGE_KEY_AUDIT_RUN = 'audit_evidence_portal_run_v1';
 const DEMO_EVIDENCE_IDS = new Set(['ev-1-1', 'ev-1-2', 'ev-2-1', 'ev-4-1', 'ev-8-1', 'ev-12-1']);
 
 const withoutDemoEvidences = (items: AuditItem[]): AuditItem[] => items.map((item) => ({
@@ -9,9 +10,53 @@ const withoutDemoEvidences = (items: AuditItem[]): AuditItem[] => items.map((ite
   evidences: (item.evidences || []).filter((evidence) => !DEMO_EVIDENCE_IDS.has(evidence.id)),
 }));
 
-export const getStoredAuditItems = (): AuditItem[] => {
+const getStorageKey = (auditKey: AuditKey, scope?: string) => {
+  const auditScope = scope || auditKey;
+  // PCGC v2 ignora la calificación histórica incluida en la matriz fuente.
+  return `${STORAGE_KEY_AUDIT_ITEMS}_${auditScope}${auditKey === 'pcgc' ? '_v2' : ''}`;
+};
+
+export interface AuditRunState {
+  closed: boolean;
+  closedAt?: string;
+}
+
+export const getAuditRunState = (scope: string): AuditRunState => {
   try {
-    const data = localStorage.getItem(STORAGE_KEY_AUDIT_ITEMS);
+    const stored = localStorage.getItem(`${STORAGE_KEY_AUDIT_RUN}_${scope}`);
+    if (stored) return { closed: Boolean(JSON.parse(stored).closed), closedAt: JSON.parse(stored).closedAt };
+  } catch (err) {
+    console.error('Error loading audit run state:', err);
+  }
+  return { closed: false };
+};
+
+export const saveAuditRunState = (scope: string, state: AuditRunState): void => {
+  try {
+    localStorage.setItem(`${STORAGE_KEY_AUDIT_RUN}_${scope}`, JSON.stringify(state));
+  } catch (err) {
+    console.error('Error saving audit run state:', err);
+  }
+};
+
+const getInitialItems = (auditKey: AuditKey): AuditItem[] => {
+  const items = getAuditDefinition(auditKey).items;
+  if (auditKey !== 'pcgc') return withoutDemoEvidences(items);
+
+  return items.map((item) => ({
+    ...item,
+    // El cumplimiento de PCGC se decide dentro del portal, no se hereda del Sheet fuente.
+    status: 'pendiente',
+    finding: '',
+    comment: '',
+    evidences: [],
+    lastUpdated: '',
+  }));
+};
+
+export const getStoredAuditItems = (auditKey: AuditKey = 'iso9001', scope?: string): AuditItem[] => {
+  try {
+    const data = localStorage.getItem(getStorageKey(auditKey, scope));
     if (data) {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -21,12 +66,12 @@ export const getStoredAuditItems = (): AuditItem[] => {
   } catch (err) {
     console.error('Error loading audit items from localStorage:', err);
   }
-  return withoutDemoEvidences(DEFAULT_AUDIT_ITEMS);
+  return getInitialItems(auditKey);
 };
 
-export const saveAuditItems = (items: AuditItem[]): void => {
+export const saveAuditItems = (items: AuditItem[], auditKey: AuditKey = 'iso9001', scope?: string): void => {
   try {
-    localStorage.setItem(STORAGE_KEY_AUDIT_ITEMS, JSON.stringify(items));
+    localStorage.setItem(getStorageKey(auditKey, scope), JSON.stringify(items));
   } catch (err) {
     console.error('Error saving audit items to localStorage:', err);
   }

@@ -24,6 +24,7 @@ interface AuditItemCardProps {
   onQuickAddEvidence: (item: AuditItem) => void;
   onUpdateStatus: (itemId: string, status: ComplianceStatus) => void;
   onQuickPreviewEvidence?: (evidence: EvidenceLink) => void;
+  readOnly?: boolean;
 }
 
 export const STATUS_CONFIG: Record<
@@ -78,6 +79,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
   onQuickAddEvidence,
   onUpdateStatus,
   onQuickPreviewEvidence,
+  readOnly = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const evidences = item.evidences || [];
@@ -86,15 +88,15 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
   return (
     <div
       id={`audit-card-${item.id}`}
-      className={`overflow-hidden rounded-xl border bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md ${
-        evidences.length > 0 ? 'border-slate-200 shadow-sm' : 'border-amber-200 bg-amber-50/20 shadow-sm'
+      className={`overflow-hidden rounded-2xl border bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md ${
+        evidences.length > 0 ? 'border-slate-200/90 shadow-sm shadow-slate-200/50' : 'border-amber-200/90 bg-amber-50/10 shadow-sm shadow-amber-100/40'
       }`}
     >
-      <div className="p-4 sm:p-5">
+      <div className="p-4.5 sm:p-5">
         {/* Top bar: Code, Section, PV/V tags, and Status dropdown */}
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="px-2 py-1 text-xs font-mono font-bold bg-slate-900 text-white rounded-md shadow-sm">
+            <span className="px-2 py-1 text-[11px] font-mono font-bold bg-slate-900 text-white rounded-lg">
               {item.code}
             </span>
             <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400 truncate max-w-[180px]">
@@ -117,6 +119,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
             <select
               value={item.status}
               onChange={(e) => onUpdateStatus(item.id, e.target.value as ComplianceStatus)}
+              disabled={readOnly}
               aria-label="Estado de conformidad"
               className={`text-[11px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-none ${statusCfg.pillClass}`}
             >
@@ -130,6 +133,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
             <button
               type="button"
               onClick={() => onOpenEvidenceModal(item)}
+              disabled={readOnly}
               title="Gestionar evidencias y detalles"
               className="rounded-md p-1.5 text-blue-600 hover:bg-blue-50 cursor-pointer"
             >
@@ -152,7 +156,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
         </div>
 
         {/* EVIDENCES SECTION - High Density Buttons */}
-        <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+        <div className="rounded-xl bg-slate-50/80 border border-slate-200/80 p-3">
           <div className="flex items-center justify-between mb-1.5">
             <div className="flex items-center gap-1.5">
               <FileCheck2 className="w-4 h-4 text-blue-600" />
@@ -163,7 +167,8 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
             <button
               type="button"
               onClick={() => onQuickAddEvidence(item)}
-              className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-bold text-blue-600 border border-blue-100 hover:bg-blue-50 transition-colors cursor-pointer"
+              disabled={readOnly}
+              className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-blue-700 border border-slate-200 hover:border-blue-200 hover:bg-blue-50 transition-colors cursor-pointer"
             >
               <Plus className="w-3 h-3" />
               <span>+ Agregar</span>
@@ -188,7 +193,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
               ))}
             </div>
           ) : (
-            <div className="flex items-center justify-between py-2 px-2.5 rounded-md bg-amber-50 border border-amber-200/60 text-amber-900 text-xs">
+            <div className="flex items-center justify-between py-2 px-2.5 rounded-lg bg-amber-50/80 border border-amber-200/60 text-amber-900 text-xs">
               <span className="flex items-center gap-1.5 text-[11px] italic text-amber-800">
                 <Clock className="w-3 h-3 text-amber-600 shrink-0" />
                 <span>Sin evidencias vinculadas aún</span>
@@ -196,6 +201,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
               <button
                 type="button"
                 onClick={() => onQuickAddEvidence(item)}
+                disabled={readOnly}
                 className="font-bold text-blue-600 hover:underline cursor-pointer text-[11px] shrink-0 ml-2"
               >
                 + Subir evidencia

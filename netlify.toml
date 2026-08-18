@@ -4,3 +4,13 @@
 
 [functions]
   directory = "netlify/functions"
+
+[[redirects]]
+  from = "/iso-9001"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/pcgc"
+  to = "/index.html"
+  status = 200
