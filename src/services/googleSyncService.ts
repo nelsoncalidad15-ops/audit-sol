@@ -8,6 +8,14 @@ export interface SyncResult {
   timestamp: string;
 }
 
+export interface LoadResult {
+  success: boolean;
+  items: any[] | null;
+  auditState?: AuditRunState | null;
+  message?: string;
+  timestamp?: string;
+}
+
 async function callSecureAuditApi(payload: Record<string, unknown>) {
   const response = await fetch('/.netlify/functions/audit', {
     method: 'POST',
@@ -23,7 +31,7 @@ async function callSecureAuditApi(payload: Record<string, unknown>) {
     // A missing Netlify function can return an HTML 404 page instead of JSON.
   }
   if (!response.ok || !result.success) {
-    throw new Error(result.error || 'El servicio de carga no está disponible. Esperá unos segundos y reintentá.');
+    throw new Error(result.error || 'El servicio de auditoría no está disponible. Esperá unos segundos y reintentá.');
   }
   return result;
 }
@@ -59,7 +67,12 @@ export async function uploadEvidenceToAppsScript(
   return result.evidence as EvidenceLink;
 }
 
-export async function pushAllToAppsScript(items: AuditItem[], auditKey: AuditKey = 'iso9001', auditRun?: AuditRunContext, auditState?: AuditRunState): Promise<SyncResult> {
+export async function pushAllToAppsScript(
+  items: AuditItem[],
+  auditKey: AuditKey = 'iso9001',
+  auditRun?: AuditRunContext,
+  auditState?: AuditRunState
+): Promise<SyncResult> {
   try {
     const data = await callSecureAuditApi({
       action: 'save_all',
@@ -80,6 +93,32 @@ export async function pushAllToAppsScript(items: AuditItem[], auditKey: AuditKey
       success: false,
       message: error.message || 'No se pudieron guardar los cambios.',
       timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+export async function fetchAllFromAppsScript(
+  auditKey: AuditKey = 'iso9001',
+  auditRun?: AuditRunContext
+): Promise<LoadResult> {
+  try {
+    const data = await callSecureAuditApi({
+      action: 'load_all',
+      auditKey,
+      auditRun,
+    });
+    return {
+      success: data.success ?? true,
+      items: Array.isArray(data.items) ? data.items : null,
+      auditState: data.auditState || null,
+      message: data.message,
+      timestamp: data.timestamp,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      items: null,
+      message: error.message || 'No se pudieron recuperar los datos remotos.',
     };
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   AuditItem, 
   ComplianceStatus, 
@@ -10,6 +10,7 @@ import {
 import { 
   getStoredAuditItems, 
   saveAuditItems, 
+  mergeRemoteAuditItems,
   calculateStats,
   getAuditRunState,
   saveAuditRunState,
@@ -19,7 +20,7 @@ import {
   exportAuditDataToCSV,
   type AuditRunState
 } from './services/storageService';
-import { pushAllToAppsScript } from './services/googleSyncService';
+import { pushAllToAppsScript, fetchAllFromAppsScript } from './services/googleSyncService';
 import { 
   getAuditDefinition, 
   getAuditRunLabel, 
@@ -72,7 +73,9 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
   const [items, setItems] = useState<AuditItem[]>(() => getStoredAuditItems(activeAuditKey, storageScope));
   const [auditState, setAuditState] = useState<AuditRunState>(() => getAuditRunState(storageScope));
   const [actionItems, setActionItems] = useState<AuditActionItem[]>(() => getStoredActionItems(storageScope));
-  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error' | 'syncing'>('saved');
+  const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
+  const isDirtyRef = useRef(false);
 
   // ISO Navigation tabs
   const [activeIsoTab, setActiveIsoTab] = useState<IsoActiveTab>('summary');
@@ -150,12 +153,14 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
 
   const handleSaveItem = (updatedItem: AuditItem) => {
     if (auditState.closed) return showToast('Esta auditoría está cerrada. Reabrila para hacer cambios.', 'info');
+    isDirtyRef.current = true;
     setItems((prev) => prev.map((it) => (it.id === updatedItem.id ? updatedItem : it)));
     showToast(`Evidencias y datos actualizados para ${updatedItem.code}`);
   };
 
   const handleUpdateStatus = (itemId: string, status: ComplianceStatus) => {
     if (auditState.closed) return showToast('Esta auditoría está cerrada. Reabrila para hacer cambios.', 'info');
+    isDirtyRef.current = true;
     setItems((prev) =>
       prev.map((it) => (it.id === itemId ? { ...it, status, lastUpdated: new Date().toISOString().split('T')[0] } : it))
     );
@@ -164,6 +169,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
 
   const handleSaveFinding = (itemId: string, finding: string) => {
     if (auditState.closed) return showToast('Esta auditoría está cerrada.', 'info');
+    isDirtyRef.current = true;
     setItems((prev) =>
       prev.map((it) => (it.id === itemId ? { ...it, finding, lastUpdated: new Date().toISOString().split('T')[0] } : it))
     );
@@ -174,10 +180,12 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     if (!auditState.closed) {
       const confirmClose = window.confirm('¿Cerrar esta auditoría? Se bloquearán las ediciones para preservar el estado final.');
       if (!confirmClose) return;
+      isDirtyRef.current = true;
       setAuditState({ closed: true, closedAt: new Date().toISOString() });
       showToast('Auditoría cerrada.', 'info');
       return;
     }
+    isDirtyRef.current = true;
     setAuditState({ closed: false });
     showToast('Auditoría reabierta para editar.');
   };
@@ -223,11 +231,10 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     );
   };
 
-  // Remote Sync debounce
+  // Remote Sync debounce (solo se dispara tras cambios del usuario y luego de la carga inicial)
   useEffect(() => {
     const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-    if (isLocal) {
-      setSaveState('saved');
+    if (isLocal || !isInitialSyncDone || !isDirtyRef.current) {
       return;
     }
 
@@ -238,12 +245,75 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
         setSaveState('error');
         showToast('No se pudo respaldar en Apps Script. Verificá la conexión.', 'error');
       } else {
+        isDirtyRef.current = false;
         setSaveState('saved');
       }
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [items, activeAuditKey, auditRun, auditState]);
+  }, [items, activeAuditKey, auditRun, auditState, isInitialSyncDone]);
+
+  // Carga inicial y sincronización con la nube (Google Sheets)
+  useEffect(() => {
+    let isCancelled = false;
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    if (isLocal) {
+      setIsInitialSyncDone(true);
+      return;
+    }
+
+    async function loadRemoteOnStartup() {
+      setSaveState('syncing');
+      try {
+        const res = await fetchAllFromAppsScript(activeAuditKey, auditRun);
+        if (isCancelled) return;
+        if (res.success && res.items && res.items.length > 0) {
+          setItems((currentItems) => {
+            const merged = mergeRemoteAuditItems(currentItems, res.items!, activeAuditKey);
+            saveAuditItems(merged, activeAuditKey, storageScope);
+            return merged;
+          });
+          if (res.auditState) {
+            setAuditState(res.auditState);
+            saveAuditRunState(storageScope, res.auditState);
+          }
+        }
+      } catch (err) {
+        console.warn('Initial remote sync warning:', err);
+      } finally {
+        if (!isCancelled) {
+          setSaveState('saved');
+          setIsInitialSyncDone(true);
+        }
+      }
+    }
+
+    loadRemoteOnStartup();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeAuditKey, storageScope, auditRun]);
+
+  const handleManualSync = async () => {
+    setSaveState('syncing');
+    showToast('Sincronizando con Google Sheets...', 'info');
+    const res = await fetchAllFromAppsScript(activeAuditKey, auditRun);
+    if (res.success && res.items && res.items.length > 0) {
+      const merged = mergeRemoteAuditItems(items, res.items, activeAuditKey);
+      setItems(merged);
+      saveAuditItems(merged, activeAuditKey, storageScope);
+      if (res.auditState) {
+        setAuditState(res.auditState);
+        saveAuditRunState(storageScope, res.auditState);
+      }
+      setSaveState('saved');
+      showToast('Sincronizado con Google Sheets');
+    } else {
+      setSaveState('saved');
+      showToast(res.message || 'La auditoría ya está al día con la nube.', 'info');
+    }
+  };
 
   const handleResetFilters = () => {
     setSearchQuery('');
@@ -306,6 +376,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
         onChangeAudit={onChangeAudit}
         auditClosed={auditState.closed}
         saveState={saveState}
+        onManualSync={handleManualSync}
         onToggleAuditClosed={handleToggleAuditClosed}
         onOpenReportModal={() => setIsReportModalOpen(true)}
         onExportJSON={() => exportAuditDataToJSON(items, actionItems)}

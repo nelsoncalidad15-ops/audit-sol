@@ -15,7 +15,8 @@ export default async (request) => {
 
   try {
     const body = await request.json();
-    if (!['save_all', 'upload_evidence'].includes(body.action)) return json({ error: 'Acción no permitida.' }, 400);
+    const allowedActions = ['save_all', 'upload_evidence', 'load_all', 'get_audit_data'];
+    if (!allowedActions.includes(body.action)) return json({ error: 'Acción no permitida.' }, 400);
 
     const response = await fetch(scriptUrl, {
       method: 'POST',

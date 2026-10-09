@@ -84,6 +84,44 @@ export const getStoredAuditItems = (auditKey: AuditKey = 'iso9001', scope?: stri
   return getInitialItems(auditKey);
 };
 
+export const mergeRemoteAuditItems = (
+  baseItems: AuditItem[],
+  remoteItems: any[],
+  auditKey: AuditKey = 'iso9001'
+): AuditItem[] => {
+  if (!Array.isArray(remoteItems) || remoteItems.length === 0) return baseItems;
+
+  const remoteMap = new Map<string, any>();
+  remoteItems.forEach((r, idx) => {
+    const code = String(r.code || '').trim();
+    const req = String(r.requirement || '').trim();
+    if (code && req) {
+      remoteMap.set(`${code}:::${req}`, r);
+    }
+  });
+
+  const merged = baseItems.map((base, idx) => {
+    const key = `${String(base.code || '').trim()}:::${String(base.requirement || '').trim()}`;
+    const remote = remoteMap.get(key) || remoteItems[idx];
+    if (!remote) return base;
+
+    const rawEvidences = Array.isArray(remote.evidences) ? remote.evidences : [];
+    const validEvidences = rawEvidences.filter((ev: any) => !DEMO_EVIDENCE_IDS.has(ev.id));
+
+    return {
+      ...base,
+      status: remote.status || base.status,
+      finding: remote.finding !== undefined ? remote.finding : base.finding,
+      comment: remote.comment !== undefined ? remote.comment : base.comment,
+      evidences: validEvidences.length > 0 ? validEvidences : (base.evidences || []),
+      lastUpdated: remote.lastUpdated || base.lastUpdated,
+    };
+  });
+
+  const sanitized = sanitizeEvidences(merged);
+  return auditKey === 'iso9001' ? sanitized.map(enrichAuditItem) : sanitized;
+};
+
 export const saveAuditItems = (items: AuditItem[], auditKey: AuditKey = 'iso9001', scope?: string): void => {
   try {
     localStorage.setItem(getStorageKey(auditKey, scope), JSON.stringify(items));

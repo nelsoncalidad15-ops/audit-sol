@@ -36,97 +36,187 @@ function doPost(e) {
     if (!isAuthorized_(request.token)) return json_({ success: false, error: 'No autorizado.' });
     const audit = getAuditConfig_(request.auditKey);
     const auditRun = getAuditRun_(request, audit);
+
     if (request.action === 'upload_evidence') {
       return uploadEvidence_(request, audit, auditRun);
     }
-    const items = request.items || [];
-    const now = new Date();
-    const dateText = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
-    const evaluation = getEvaluationSheet_(auditRun.sheetPrefix + '_EVALUACION');
-    const history = getHistorySheet_(auditRun.sheetPrefix + '_HISTORIAL');
-    const evidenceSheet = getEvidenceSheet_(auditRun.sheetPrefix + '_EVIDENCIAS');
 
-    evaluation.clearContents();
-    evaluation.getRange(1, 1, 1, 12).setValues([[
-      'CÓDIGO', 'CAPÍTULO', 'SECCIÓN', 'REQUERIMIENTO', 'PV', 'V',
-      'ESTADO', 'HALLAZGO', 'TOTAL EVIDENCIAS', 'EVIDENCIAS (JSON)',
-      'ÚLTIMA ACTUALIZACIÓN', 'AUDITOR'
-    ]]);
-    formatHeader_(evaluation.getRange(1, 1, 1, 12));
-
-    evidenceSheet.clearContents();
-    evidenceSheet.getRange(1, 1, 1, 9).setValues([[
-      'CÓDIGO', 'TIPO', 'NOMBRE', 'ENLACE', 'DESCRIPCIÓN',
-      'FECHA DE ALTA', 'ÚLTIMA SINCRONIZACIÓN', 'ESTADO', 'CAPÍTULO'
-    ]]);
-    formatHeader_(evidenceSheet.getRange(1, 1, 1, 9));
-
-    const totals = { cumplida: 0, no_cumplida: 0, en_progreso: 0, no_aplica: 0, evidences: 0 };
-    const evidenceRows = [];
-    const rows = items.map(function(item) {
-      const evidences = item.evidences || [];
-      const status = normalizeStatus_(item.status);
-      if (Object.prototype.hasOwnProperty.call(totals, status)) totals[status]++;
-      totals.evidences += evidences.length;
-      evidences.forEach(function(evidence) {
-        evidenceRows.push([
-          item.code || item.id || '',
-          evidence.type || 'other',
-          evidence.title || 'Evidencia',
-          evidence.url || '',
-          evidence.description || '',
-          evidence.addedAt || '',
-          dateText,
-          status,
-          item.chapter || ''
-        ]);
-      });
-
-      return [
-        item.code || item.id || '',
-        item.chapter || '',
-        item.section || '',
-        item.requirement || '',
-        item.pv ? 'X' : '',
-        item.v ? 'X' : '',
-        status,
-        item.finding || '',
-        evidences.length,
-        JSON.stringify(evidences),
-        dateText,
-        request.auditorName || 'Equipo de Calidad'
-      ];
-    });
-
-    if (rows.length) {
-      evaluation.getRange(2, 1, rows.length, 12).setValues(rows);
-      evaluation.autoResizeColumns(1, 12);
-      evaluation.setFrozenRows(1);
+    if (request.action === 'load_all' || request.action === 'get_audit_data') {
+      return loadAllAuditData_(request, audit, auditRun);
     }
 
-    if (evidenceRows.length) {
-      evidenceSheet.getRange(2, 1, evidenceRows.length, 9).setValues(evidenceRows);
-      evidenceSheet.autoResizeColumns(1, 9);
-      evidenceSheet.setFrozenRows(1);
+    if (request.action === 'save_all') {
+      return saveAllAuditData_(request, audit, auditRun);
     }
 
-    history.appendRow([
-      dateText,
-      items.length,
-      totals.cumplida,
-      totals.no_cumplida,
-      totals.en_progreso,
-      totals.no_aplica,
-      items.length ? Math.round((totals.cumplida / items.length) * 100) + '%' : '0%',
-      totals.evidences,
-      request.auditorName || 'Equipo de Calidad',
-      audit.name + ' · ' + auditRun.label + ' · ' + (request.auditState && request.auditState.closed ? 'Auditoría cerrada' : 'Auditoría en curso') + ' · Sincronización automática desde la aplicación'
-    ]);
-
-    return json_({ success: true, message: 'Auditoría sincronizada', timestamp: now.toISOString() });
+    return json_({ success: false, error: 'Acción no reconocida: ' + request.action });
   } catch (error) {
     return json_({ success: false, error: String(error) });
   }
+}
+
+function loadAllAuditData_(request, audit, auditRun) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const evaluationSheetName = auditRun.sheetPrefix + '_EVALUACION';
+  const evaluation = spreadsheet.getSheetByName(evaluationSheetName);
+
+  if (!evaluation) {
+    return json_({
+      success: true,
+      items: null,
+      auditState: { closed: false },
+      message: 'Aún no hay datos guardados para esta auditoría.'
+    });
+  }
+
+  const lastRow = evaluation.getLastRow();
+  if (lastRow < 2) {
+    return json_({
+      success: true,
+      items: null,
+      auditState: { closed: false },
+      message: 'Hoja de evaluación vacía.'
+    });
+  }
+
+  const rows = evaluation.getRange(2, 1, lastRow - 1, 12).getValues();
+  const items = rows.map(function(row) {
+    var evidences = [];
+    if (row[9]) {
+      try {
+        evidences = typeof row[9] === 'string' ? JSON.parse(row[9]) : row[9];
+      } catch (err) {
+        evidences = [];
+      }
+    }
+    return {
+      code: String(row[0] || '').trim(),
+      chapter: String(row[1] || '').trim(),
+      section: String(row[2] || '').trim(),
+      requirement: String(row[3] || '').trim(),
+      pv: String(row[4] || '').toUpperCase() === 'X',
+      v: String(row[5] || '').toUpperCase() === 'X',
+      status: normalizeStatus_(row[6]),
+      finding: String(row[7] || '').trim(),
+      evidences: Array.isArray(evidences) ? evidences : [],
+      lastUpdated: String(row[10] || '').trim(),
+      responsible: String(row[11] || '').trim()
+    };
+  });
+
+  // Determinar si la auditoría está cerrada desde el historial
+  var closed = false;
+  try {
+    const historySheetName = auditRun.sheetPrefix + '_HISTORIAL';
+    const history = spreadsheet.getSheetByName(historySheetName);
+    if (history && history.getLastRow() >= 2) {
+      const lastNote = String(history.getRange(history.getLastRow(), 10).getValue() || '');
+      if (lastNote.indexOf('Auditoría cerrada') >= 0) {
+        closed = true;
+      }
+    }
+  } catch (err) {
+    closed = false;
+  }
+
+  return json_({
+    success: true,
+    items: items,
+    auditState: { closed: closed },
+    timestamp: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss')
+  });
+}
+
+function saveAllAuditData_(request, audit, auditRun) {
+  const items = request.items || [];
+  if (!Array.isArray(items) || items.length === 0) {
+    return json_({ success: false, error: 'No se recibieron datos para guardar.' });
+  }
+
+  const now = new Date();
+  const dateText = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  const evaluation = getEvaluationSheet_(auditRun.sheetPrefix + '_EVALUACION');
+  const history = getHistorySheet_(auditRun.sheetPrefix + '_HISTORIAL');
+  const evidenceSheet = getEvidenceSheet_(auditRun.sheetPrefix + '_EVIDENCIAS');
+
+  evaluation.clearContents();
+  evaluation.getRange(1, 1, 1, 12).setValues([[
+    'CÓDIGO', 'CAPÍTULO', 'SECCIÓN', 'REQUERIMIENTO', 'PV', 'V',
+    'ESTADO', 'HALLAZGO', 'TOTAL EVIDENCIAS', 'EVIDENCIAS (JSON)',
+    'ÚLTIMA ACTUALIZACIÓN', 'AUDITOR'
+  ]]);
+  formatHeader_(evaluation.getRange(1, 1, 1, 12));
+
+  evidenceSheet.clearContents();
+  evidenceSheet.getRange(1, 1, 1, 9).setValues([[
+    'CÓDIGO', 'TIPO', 'NOMBRE', 'ENLACE', 'DESCRIPCIÓN',
+    'FECHA DE ALTA', 'ÚLTIMA SINCRONIZACIÓN', 'ESTADO', 'CAPÍTULO'
+  ]]);
+  formatHeader_(evidenceSheet.getRange(1, 1, 1, 9));
+
+  const totals = { cumplida: 0, no_cumplida: 0, en_progreso: 0, no_aplica: 0, evidences: 0 };
+  const evidenceRows = [];
+  const rows = items.map(function(item) {
+    const evidences = item.evidences || [];
+    const status = normalizeStatus_(item.status);
+    if (Object.prototype.hasOwnProperty.call(totals, status)) totals[status]++;
+    totals.evidences += evidences.length;
+    evidences.forEach(function(evidence) {
+      evidenceRows.push([
+        item.code || item.id || '',
+        evidence.type || 'other',
+        evidence.title || 'Evidencia',
+        evidence.url || '',
+        evidence.description || '',
+        evidence.addedAt || '',
+        dateText,
+        status,
+        item.chapter || ''
+      ]);
+    });
+
+    return [
+      item.code || item.id || '',
+      item.chapter || '',
+      item.section || '',
+      item.requirement || '',
+      item.pv ? 'X' : '',
+      item.v ? 'X' : '',
+      status,
+      item.finding || '',
+      evidences.length,
+      JSON.stringify(evidences),
+      dateText,
+      request.auditorName || 'Equipo de Calidad'
+    ];
+  });
+
+  if (rows.length) {
+    evaluation.getRange(2, 1, rows.length, 12).setValues(rows);
+    evaluation.autoResizeColumns(1, 12);
+    evaluation.setFrozenRows(1);
+  }
+
+  if (evidenceRows.length) {
+    evidenceSheet.getRange(2, 1, evidenceRows.length, 9).setValues(evidenceRows);
+    evidenceSheet.autoResizeColumns(1, 9);
+    evidenceSheet.setFrozenRows(1);
+  }
+
+  history.appendRow([
+    dateText,
+    items.length,
+    totals.cumplida,
+    totals.no_cumplida,
+    totals.en_progreso,
+    totals.no_aplica,
+    items.length ? Math.round((totals.cumplida / items.length) * 100) + '%' : '0%',
+    totals.evidences,
+    request.auditorName || 'Equipo de Calidad',
+    audit.name + ' · ' + auditRun.label + ' · ' + (request.auditState && request.auditState.closed ? 'Auditoría cerrada' : 'Auditoría en curso') + ' · Sincronización automática desde la aplicación'
+  ]);
+
+  return json_({ success: true, message: 'Auditoría sincronizada', timestamp: now.toISOString() });
 }
 
 function getEvaluationSheet_(sheetName) {

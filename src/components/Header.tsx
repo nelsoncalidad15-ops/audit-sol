@@ -13,7 +13,8 @@ import {
   ClipboardCheck, 
   ListTodo,
   FileSpreadsheet,
-  FileCode
+  FileCode,
+  RefreshCw
 } from 'lucide-react';
 
 export type IsoActiveTab = 'summary' | 'checklist' | 'audit' | 'tasks';
@@ -27,7 +28,8 @@ interface HeaderProps {
   pendingTasksCount: number;
   onChangeAudit: () => void;
   auditClosed: boolean;
-  saveState: 'saved' | 'saving' | 'error';
+  saveState: 'saved' | 'saving' | 'error' | 'syncing';
+  onManualSync?: () => void;
   onToggleAuditClosed: () => void;
   onOpenReportModal: () => void;
   onExportJSON: () => void;
@@ -44,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
   onChangeAudit,
   auditClosed,
   saveState,
+  onManualSync,
   onToggleAuditClosed,
   onOpenReportModal,
   onExportJSON,
@@ -141,25 +144,36 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Actions & Sync State */}
         <div className="flex items-center gap-2">
-          {/* Sync indicator */}
-          <div className="hidden lg:flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
-            {saveState === 'saved' ? (
-              <span className="flex items-center gap-1 text-emerald-400">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Guardado</span>
+          {/* Sync indicator & manual refresh */}
+          <button
+            type="button"
+            onClick={onManualSync}
+            disabled={saveState === 'syncing' || saveState === 'saving'}
+            title="Sincronizar con Google Sheets (Nube)"
+            className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            {saveState === 'syncing' ? (
+              <span className="flex items-center gap-1 text-cyan-400 animate-pulse">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Sincronizando...</span>
               </span>
             ) : saveState === 'saving' ? (
               <span className="flex items-center gap-1 text-blue-400 animate-pulse">
                 <Cloud className="w-3.5 h-3.5" />
                 <span>Guardando...</span>
               </span>
-            ) : (
+            ) : saveState === 'error' ? (
               <span className="flex items-center gap-1 text-rose-400 font-bold">
                 <Cloud className="w-3.5 h-3.5" />
-                <span>Revisar guardado</span>
+                <span>Error (Reintentar)</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-emerald-400">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Al día</span>
               </span>
             )}
-          </div>
+          </button>
 
           {/* Dossier Report Button */}
           <button
