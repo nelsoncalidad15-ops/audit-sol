@@ -7,7 +7,6 @@ import {
   Edit,
   FilePlus2,
   HelpCircle,
-  Info,
   XCircle,
   Search,
   FileText,
@@ -223,33 +222,76 @@ export const AuditMode: React.FC<AuditModeProps> = ({
               </h1>
               {item.question && item.question.trim() !== item.requirement.trim() && (
                 <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-1">Pregunta:</span>
                   {item.question}
                 </p>
               )}
             </div>
 
-            {/* 1. Qué se verifica */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-                Qué se verifica:
+            {/* 1. Descripción del Requerimiento — OFICIAL */}
+            <div className="p-3.5 rounded-xl bg-white border border-slate-200 shadow-2xs">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-blue-900 mb-1.5">
+                Descripción del Requerimiento (Oficial):
               </h2>
-              <p className="text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-line">
-                {item.whatToVerify || item.description}
+              <p className="text-xs sm:text-sm text-slate-800 leading-relaxed whitespace-pre-line">
+                {item.description}
               </p>
             </div>
 
-            {/* 2. Qué mostrar / Evidencia documental esperada */}
-            <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200/80">
-              <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-indigo-950 mb-1.5">
-                <FileText className="w-4 h-4 text-indigo-600" />
-                <span>Qué mostrar · Documentación y Registros Esperados:</span>
-              </h2>
-              <p className="text-xs sm:text-sm font-medium text-indigo-900 leading-relaxed">
-                {item.whatToShow || 'Documentación, registros y evidencias operativas que respalden este criterio.'}
-              </p>
-            </div>
+            {/* 2. Cómo Auditar — OFICIAL */}
+            {item.howToAudit && (
+              <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200/80">
+                <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-blue-950 mb-1.5">
+                  <HelpCircle className="w-4 h-4 text-blue-600" />
+                  <span>Cómo Auditar · Instrucciones y Muestreo (Oficial):</span>
+                </h2>
+                <p className="text-xs sm:text-sm text-blue-950 leading-relaxed whitespace-pre-line">
+                  {item.howToAudit}
+                </p>
+              </div>
+            )}
 
-            {/* 3. Direct Evidences Links */}
+            {/* 3. Orientación interna */}
+            {(item.whatToShow || item.whatToVerify || item.howToCheck) && (
+              <div className="border border-amber-200 rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsHowToCheckOpen(!isHowToCheckOpen)}
+                  className="w-full flex items-center justify-between p-3 bg-amber-50/80 hover:bg-amber-100/80 transition-colors text-left cursor-pointer"
+                >
+                  <span className="flex items-center gap-2 text-xs font-bold text-amber-900">
+                    <FileText className="w-4 h-4 text-amber-700" />
+                    <span>Orientación Interna · Guía Rápida y Documentación Sugerida</span>
+                  </span>
+                  {isHowToCheckOpen ? <ChevronUp className="w-4 h-4 text-amber-600" /> : <ChevronDown className="w-4 h-4 text-amber-600" />}
+                </button>
+
+                {isHowToCheckOpen && (
+                  <div className="p-4 bg-white border-t border-amber-200 space-y-2.5">
+                    {item.whatToVerify && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 block mb-0.5">Qué se verifica (orientación):</span>
+                        <p className="text-xs text-amber-950 leading-relaxed">{item.whatToVerify}</p>
+                      </div>
+                    )}
+                    {item.whatToShow && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 block mb-0.5">Documentación sugerida (orientación):</span>
+                        <p className="text-xs text-amber-950 leading-relaxed">{item.whatToShow}</p>
+                      </div>
+                    )}
+                    {item.howToCheck && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 block mb-0.5">Cómo comprobarlo (orientación):</span>
+                        <p className="text-xs text-amber-950 leading-relaxed whitespace-pre-line">{item.howToCheck}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 4. Direct Evidences Links */}
             <div>
               <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
@@ -297,29 +339,6 @@ export const AuditMode: React.FC<AuditModeProps> = ({
                 </div>
               )}
             </div>
-
-            {/* 4. Collapsible Instructions (Cómo comprobarlo / Muestreo) */}
-            {(item.howToCheck || item.howToAudit) && (
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setIsHowToCheckOpen(!isHowToCheckOpen)}
-                  className="w-full flex items-center justify-between p-3.5 bg-slate-50/80 hover:bg-slate-100 transition-colors text-left cursor-pointer"
-                >
-                  <span className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                    <Info className="w-4 h-4 text-blue-600" />
-                    <span>Instrucciones de Verificación & Pautas de Muestreo</span>
-                  </span>
-                  {isHowToCheckOpen ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-                </button>
-
-                {isHowToCheckOpen && (
-                  <div className="p-4 bg-white border-t border-slate-200 text-xs text-slate-700 leading-relaxed whitespace-pre-line">
-                    {item.howToCheck || item.howToAudit}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* 5. Verification Result (1-Click Status buttons) */}
             <div className="pt-4 border-t border-slate-200">

@@ -27,7 +27,8 @@ import {
   User,
   ShieldCheck,
   FileText,
-  Info
+  Info,
+  HelpCircle
 } from 'lucide-react';
 
 interface EvidenceManagerModalProps {
@@ -291,8 +292,8 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
             </div>
           )}
 
-          {/* Normative Reference & Expected Documents */}
-          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5 text-xs">
+          {/* Normative Reference & Official Content */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3 text-xs">
             <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-200/60">
               {item.originType && <OriginBadge originType={item.originType} size="sm" fullLabel />}
               {item.isoClause && (
@@ -302,19 +303,37 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
               )}
             </div>
 
-            {item.whatToVerify && (
-              <div>
-                <span className="font-bold text-slate-800 block mb-0.5">Qué se verifica:</span>
-                <p className="text-slate-600 leading-relaxed">{item.whatToVerify}</p>
+            {/* Official Description */}
+            <div>
+              <span className="font-bold text-blue-900 block mb-0.5 text-[10px] uppercase tracking-wider">Descripción del Requerimiento (Oficial):</span>
+              <p className="text-slate-700 leading-relaxed whitespace-pre-line">{item.description}</p>
+            </div>
+
+            {/* Official How to Audit */}
+            {item.howToAudit && (
+              <div className="pt-2 border-t border-slate-200/60">
+                <span className="font-bold text-blue-900 block mb-0.5 text-[10px] uppercase tracking-wider flex items-center gap-1">
+                  <HelpCircle className="w-3.5 h-3.5 text-blue-600" /> Cómo Auditar (Oficial):
+                </span>
+                <p className="text-slate-700 leading-relaxed whitespace-pre-line">{item.howToAudit}</p>
               </div>
             )}
 
-            {item.whatToShow && (
-              <div className="pt-2 border-t border-slate-200/60 text-indigo-950">
-                <span className="font-bold text-indigo-900 block mb-0.5 flex items-center gap-1">
-                  <FileText className="w-3.5 h-3.5 text-indigo-600" /> Documentación esperada:
+            {/* Internal Helpers */}
+            {(item.whatToVerify || item.whatToShow || item.howToCheck) && (
+              <div className="pt-2 border-t border-amber-200/60 bg-amber-50/50 -mx-4 -mb-4 p-4 rounded-b-xl">
+                <span className="font-bold text-amber-800 block mb-1 text-[10px] uppercase tracking-wider flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5 text-amber-700" /> Orientación Interna:
                 </span>
-                <p className="text-indigo-900/90 leading-relaxed">{item.whatToShow}</p>
+                {item.whatToVerify && (
+                  <p className="text-amber-900/90 leading-relaxed mb-1"><strong className="text-amber-950">Verificar:</strong> {item.whatToVerify}</p>
+                )}
+                {item.whatToShow && (
+                  <p className="text-amber-900/90 leading-relaxed"><strong className="text-amber-950">Documentación sugerida:</strong> {item.whatToShow}</p>
+                )}
+                {item.howToCheck && (
+                  <p className="text-amber-900/90 leading-relaxed whitespace-pre-line"><strong className="text-amber-950">Cómo comprobarlo:</strong> {item.howToCheck}</p>
+                )}
               </div>
             )}
           </div>

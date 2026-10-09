@@ -51,9 +51,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
 
   // Text formatting: avoid redundancy if requirement and question are identical
   const showQuestion = item.question && item.question.trim() !== item.requirement.trim();
-  const summaryText = item.whatToVerify || item.description;
   const expectedDocs = item.whatToShow;
-  const howToAudit = item.howToCheck || item.howToAudit;
 
   return (
     <article
@@ -118,7 +116,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
           </div>
         </div>
 
-        {/* Title & Concise orientation */}
+        {/* Title & Quick guidance */}
         <div className="my-3 flex-1">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium mb-1 truncate">
             <span>{item.chapter}</span>
@@ -131,23 +129,16 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
           </h3>
 
           {showQuestion && (
-            <p className="text-xs text-slate-500 mt-1 line-clamp-1">
-              {item.question}
-            </p>
-          )}
-
-          {summaryText && (
-            <p className="text-xs text-slate-600 mt-2 line-clamp-2 leading-relaxed bg-slate-50 p-2 rounded-lg border border-slate-100">
-              <span className="font-semibold text-slate-700">Qué se verifica: </span>
-              {summaryText}
+            <p className="text-xs text-slate-500 mt-1 line-clamp-1 font-medium">
+              <span className="text-slate-400">Pregunta:</span> {item.question}
             </p>
           )}
 
           {expectedDocs && !isExpanded && (
-            <div className="mt-2 text-[11px] text-indigo-900 bg-indigo-50/50 px-2 py-1.5 rounded-lg border border-indigo-100/60 flex items-start gap-1.5">
+            <div className="mt-2.5 text-[11px] text-indigo-900 bg-indigo-50/70 px-2.5 py-1.5 rounded-lg border border-indigo-100 flex items-start gap-1.5">
               <FileText className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
-              <span className="line-clamp-1">
-                <strong className="font-semibold">Qué mostrar:</strong> {expectedDocs}
+              <span className="line-clamp-2">
+                <strong className="font-semibold text-indigo-950">Orientación operativa:</strong> {expectedDocs}
               </span>
             </div>
           )}
@@ -213,16 +204,16 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
           )}
         </div>
 
-        {/* Collapsible Detail Section */}
+        {/* Collapsible Detail Section (Full Official Content) */}
         <div className="mt-3 pt-2.5 border-t border-slate-100">
           <button
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="w-full flex items-center justify-between text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+            className="w-full flex items-center justify-between text-[11px] font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
           >
-            <span className="flex items-center gap-1">
-              {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-blue-600" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
-              <span>{isExpanded ? 'Ocultar guía detallada' : 'Ver pautas y documentos esperados'}</span>
+            <span className="flex items-center gap-1.5">
+              {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-blue-600" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
+              <span>{isExpanded ? 'Ocultar contenido oficial' : 'Ver checklist oficial & pautas completas'}</span>
             </span>
             <span className="font-mono text-[10px] text-slate-400">
               #{item.rowNumber}
@@ -230,26 +221,69 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
           </button>
 
           {isExpanded && (
-            <div className="mt-3 pt-3 border-t border-slate-200/80 space-y-2.5 text-xs animate-in fade-in duration-150">
-              {expectedDocs && (
-                <div className="bg-indigo-50/70 p-2.5 rounded-lg border border-indigo-200/70">
-                  <span className="font-bold text-indigo-950 text-[11px] block mb-0.5 uppercase tracking-wider flex items-center gap-1">
-                    <FileText className="w-3 h-3 text-indigo-600" /> Documentación y Evidencia Esperada:
+            <div className="mt-3 pt-3 border-t border-slate-200/80 space-y-3 text-xs animate-in fade-in duration-150">
+              {/* Pregunta Oficial */}
+              {item.question && (
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                  <span className="font-bold text-slate-900 text-[10px] uppercase tracking-wider block mb-0.5">
+                    Pregunta Oficial:
                   </span>
-                  <p className="text-indigo-900 leading-relaxed text-xs">
+                  <p className="text-slate-700 font-medium">
+                    {item.question}
+                  </p>
+                </div>
+              )}
+
+              {/* Descripción del Requerimiento (Texto Oficial Completo) */}
+              <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+                <span className="font-bold text-slate-900 text-[10px] uppercase tracking-wider block mb-1 text-blue-900">
+                  Descripción del Requerimiento (Oficial):
+                </span>
+                <p className="text-slate-800 leading-relaxed text-xs whitespace-pre-line">
+                  {item.description}
+                </p>
+              </div>
+
+              {/* Cómo Auditar (Instrucciones Oficiales de Auditoría) */}
+              {item.howToAudit && (
+                <div className="bg-blue-50/70 p-3 rounded-lg border border-blue-200/80">
+                  <span className="font-bold text-blue-950 text-[10px] uppercase tracking-wider block mb-1 flex items-center gap-1">
+                    <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Cómo Auditar (Instrucciones y Muestreo Oficiales):</span>
+                  </span>
+                  <p className="text-blue-950 leading-relaxed text-xs whitespace-pre-line">
+                    {item.howToAudit}
+                  </p>
+                </div>
+              )}
+
+              {/* Ayuda Interna: Qué Mostrar */}
+              {expectedDocs && (
+                <div className="bg-amber-50/60 p-2.5 rounded-lg border border-amber-200/70">
+                  <span className="font-bold text-amber-950 text-[10px] uppercase tracking-wider block mb-0.5 flex items-center gap-1">
+                    <FileText className="w-3 h-3 text-amber-700" />
+                    <span>Orientación Interna · Documentación Sugerida:</span>
+                  </span>
+                  <p className="text-amber-900 leading-relaxed text-xs">
                     {expectedDocs}
                   </p>
                 </div>
               )}
 
-              {howToAudit && (
-                <div className="bg-blue-50/60 p-2.5 rounded-lg border border-blue-200/70">
-                  <span className="font-bold text-blue-950 text-[11px] block mb-0.5 uppercase tracking-wider flex items-center gap-1">
-                    <HelpCircle className="w-3 h-3 text-blue-600" /> Cómo Comprobarlo / Muestreo:
-                  </span>
-                  <p className="text-blue-900 leading-relaxed text-xs whitespace-pre-line">
-                    {howToAudit}
-                  </p>
+              {(item.whatToVerify || item.howToCheck) && (
+                <div className="bg-amber-50/60 p-2.5 rounded-lg border border-amber-200/70 space-y-2">
+                  {item.whatToVerify && (
+                    <div>
+                      <span className="font-bold text-amber-950 text-[10px] uppercase tracking-wider block mb-0.5">Qué se verifica · orientación interna:</span>
+                      <p className="text-amber-900 leading-relaxed whitespace-pre-line">{item.whatToVerify}</p>
+                    </div>
+                  )}
+                  {item.howToCheck && (
+                    <div>
+                      <span className="font-bold text-amber-950 text-[10px] uppercase tracking-wider block mb-0.5">Cómo comprobarlo · orientación interna:</span>
+                      <p className="text-amber-900 leading-relaxed whitespace-pre-line">{item.howToCheck}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -262,7 +296,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
 
               {item.finding && (
                 <div className="bg-rose-50 p-2.5 rounded-lg border border-rose-200">
-                  <span className="font-bold text-rose-950 text-[11px] block mb-0.5 uppercase tracking-wider flex items-center gap-1">
+                  <span className="font-bold text-rose-950 text-[10px] uppercase tracking-wider block mb-0.5 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3 text-rose-600" /> Hallazgo / Observación:
                   </span>
                   <p className="text-rose-900 leading-relaxed text-xs">
