@@ -23,3 +23,4 @@ export const IsoClauseBadge: React.FC<IsoClauseBadgeProps> = ({
     </span>
   );
 };
+

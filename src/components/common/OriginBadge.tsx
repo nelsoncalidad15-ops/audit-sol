@@ -29,3 +29,4 @@ export const OriginBadge: React.FC<OriginBadgeProps> = ({
     </span>
   );
 };
+
