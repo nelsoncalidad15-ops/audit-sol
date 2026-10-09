@@ -5,18 +5,25 @@ import {
   EvidenceLink 
 } from '../types/audit';
 import { EvidenceButton } from './EvidenceTypeBadge';
+import { StatusBadge, STATUS_CONFIG } from './common/StatusBadge';
+import { OriginBadge } from './common/OriginBadge';
+import { IsoClauseBadge } from './common/IsoClauseBadge';
 import { 
   ChevronDown, 
   ChevronUp, 
   Plus, 
-  CheckCircle2, 
-  Clock, 
-  XCircle, 
-  MinusCircle, 
-  CircleDashed,
-  FileCheck2,
-  Edit
+  FileCheck2, 
+  Edit,
+  Clock,
+  User,
+  Calendar,
+  AlertTriangle,
+  FileText,
+  HelpCircle,
+  FolderOpen
 } from 'lucide-react';
+
+export { STATUS_CONFIG };
 
 interface AuditItemCardProps {
   item: AuditItem;
@@ -26,52 +33,6 @@ interface AuditItemCardProps {
   onQuickPreviewEvidence?: (evidence: EvidenceLink) => void;
   readOnly?: boolean;
 }
-
-export const STATUS_CONFIG: Record<
-  ComplianceStatus,
-  { label: string; bg: string; text: string; border: string; pillClass: string; icon: React.ComponentType<{ className?: string }> }
-> = {
-  cumplida: {
-    label: 'Cumple',
-    bg: 'bg-green-50 text-green-700',
-    text: 'text-green-700',
-    border: 'border-green-200',
-    pillClass: 'bg-green-100 text-green-700 border-green-200',
-    icon: CheckCircle2,
-  },
-  en_progreso: {
-    label: 'En Proceso',
-    bg: 'bg-yellow-50 text-yellow-700',
-    text: 'text-yellow-700',
-    border: 'border-yellow-200',
-    pillClass: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    icon: Clock,
-  },
-  no_cumplida: {
-    label: 'No Cumple',
-    bg: 'bg-red-50 text-red-700',
-    text: 'text-red-700',
-    border: 'border-red-200',
-    pillClass: 'bg-red-100 text-red-700 border-red-200',
-    icon: XCircle,
-  },
-  no_aplica: {
-    label: 'No Aplica',
-    bg: 'bg-gray-100 text-gray-700',
-    text: 'text-gray-600',
-    border: 'border-gray-200',
-    pillClass: 'bg-gray-100 text-gray-700 border-gray-200',
-    icon: MinusCircle,
-  },
-  pendiente: {
-    label: 'Pendiente',
-    bg: 'bg-orange-50 text-orange-700',
-    text: 'text-orange-700',
-    border: 'border-orange-200',
-    pillClass: 'bg-orange-100 text-orange-700 border-orange-200',
-    icon: CircleDashed,
-  },
-};
 
 export const AuditItemCard: React.FC<AuditItemCardProps> = ({
   item,
@@ -83,25 +44,40 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const evidences = item.evidences || [];
+  const validEvidences = evidences.filter((e) => Boolean(e.url && e.url.trim().length > 0));
+  const verifiedCount = validEvidences.filter((e) => e.verified).length;
+
   const statusCfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pendiente;
 
+  // Text formatting: avoid redundancy if requirement and question are identical
+  const showQuestion = item.question && item.question.trim() !== item.requirement.trim();
+  const summaryText = item.whatToVerify || item.description;
+  const expectedDocs = item.whatToShow;
+  const howToAudit = item.howToCheck || item.howToAudit;
+
   return (
-    <div
+    <article
       id={`audit-card-${item.id}`}
-      className={`overflow-hidden rounded-2xl border bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md ${
-        evidences.length > 0 ? 'border-slate-200/90 shadow-sm shadow-slate-200/50' : 'border-amber-200/90 bg-amber-50/10 shadow-sm shadow-amber-100/40'
+      className={`group flex flex-col justify-between rounded-xl border bg-white transition-all duration-200 hover:border-slate-300 hover:shadow-sm ${
+        item.status === 'no_cumplida'
+          ? 'border-rose-200 bg-rose-50/10'
+          : item.status === 'cumplida'
+          ? 'border-slate-200/90'
+          : validEvidences.length === 0
+          ? 'border-amber-200/80 bg-amber-50/5'
+          : 'border-slate-200/80'
       }`}
     >
-      <div className="p-4.5 sm:p-5">
-        {/* Top bar: Code, Section, PV/V tags, and Status dropdown */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="px-2 py-1 text-[11px] font-mono font-bold bg-slate-900 text-white rounded-lg">
+      <div className="p-4 sm:p-4.5 flex-1 flex flex-col">
+        {/* Header: Code, Clause/Origin, PV/V, Status */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-mono font-bold text-xs bg-slate-900 text-white px-2 py-0.5 rounded-md">
               {item.code}
             </span>
-            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400 truncate max-w-[180px]">
-              {item.section}
-            </span>
+            {item.originType && (
+              <OriginBadge originType={item.originType} size="sm" />
+            )}
             {item.pv && (
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200" title="Aplica a Posventa (PV)">
                 PV
@@ -114,14 +90,13 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
             )}
           </div>
 
-          {/* Compliance Status selector */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <select
               value={item.status}
               onChange={(e) => onUpdateStatus(item.id, e.target.value as ComplianceStatus)}
               disabled={readOnly}
-              aria-label="Estado de conformidad"
-              className={`text-[11px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-none ${statusCfg.pillClass}`}
+              aria-label="Estado del requisito"
+              className={`text-[11px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border cursor-pointer focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors ${statusCfg.pillClass}`}
             >
               <option value="cumplida">✓ Cumple</option>
               <option value="en_progreso">⏳ En Proceso</option>
@@ -134,136 +109,177 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
               type="button"
               onClick={() => onOpenEvidenceModal(item)}
               disabled={readOnly}
-              title="Gestionar evidencias y detalles"
-              className="rounded-md p-1.5 text-blue-600 hover:bg-blue-50 cursor-pointer"
+              title="Gestionar evidencias y observaciones"
+              className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
             >
-              <Edit className="w-3 h-3" />
+              <Edit className="w-3.5 h-3.5" />
               <span className="sr-only">Detalles</span>
             </button>
           </div>
         </div>
 
-        {/* Question & Requirement Title */}
-        <div className="my-4">
-          {item.question && item.question !== item.requirement && (
-            <h4 className="text-xs font-normal text-slate-500 mb-1">
-              {item.question}
-            </h4>
-          )}
-          <h3 className="text-[15px] font-bold text-slate-900 leading-snug">
+        {/* Title & Concise orientation */}
+        <div className="my-3 flex-1">
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium mb-1 truncate">
+            <span>{item.chapter}</span>
+            <span>›</span>
+            <span className="truncate">{item.section}</span>
+          </div>
+
+          <h3 className="text-sm font-bold text-slate-900 leading-snug">
             {item.requirement}
           </h3>
-        </div>
 
-        {/* EVIDENCES SECTION - High Density Buttons */}
-        <div className="rounded-xl bg-slate-50/80 border border-slate-200/80 p-3">
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="flex items-center gap-1.5">
-              <FileCheck2 className="w-4 h-4 text-blue-600" />
-              <span className="text-xs font-bold text-slate-700">
-                Evidencias · {evidences.length}
+          {showQuestion && (
+            <p className="text-xs text-slate-500 mt-1 line-clamp-1">
+              {item.question}
+            </p>
+          )}
+
+          {summaryText && (
+            <p className="text-xs text-slate-600 mt-2 line-clamp-2 leading-relaxed bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <span className="font-semibold text-slate-700">Qué se verifica: </span>
+              {summaryText}
+            </p>
+          )}
+
+          {expectedDocs && !isExpanded && (
+            <div className="mt-2 text-[11px] text-indigo-900 bg-indigo-50/50 px-2 py-1.5 rounded-lg border border-indigo-100/60 flex items-start gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
+              <span className="line-clamp-1">
+                <strong className="font-semibold">Qué mostrar:</strong> {expectedDocs}
               </span>
             </div>
+          )}
+        </div>
+
+        {/* Evidences quick section */}
+        <div className="rounded-lg bg-slate-50 border border-slate-200/70 p-2.5 mt-auto">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <FileCheck2 className="w-3.5 h-3.5 text-slate-700" />
+              <span className="text-xs font-bold text-slate-700">
+                Evidencias ({validEvidences.length})
+              </span>
+              {verifiedCount > 0 && (
+                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.2 rounded">
+                  {verifiedCount} verif.
+                </span>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={() => onQuickAddEvidence(item)}
               disabled={readOnly}
-              className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-blue-700 border border-slate-200 hover:border-blue-200 hover:bg-blue-50 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-800 hover:underline cursor-pointer"
             >
               <Plus className="w-3 h-3" />
-              <span>+ Agregar</span>
+              <span>Adjuntar</span>
             </button>
           </div>
 
-          {evidences.length > 0 ? (
+          {validEvidences.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5">
-              {evidences.map((ev) => (
-                <div key={ev.id} className="relative group inline-flex items-center">
-                  <EvidenceButton
-                    evidence={ev}
-                    onClick={() => {
-                      if (onQuickPreviewEvidence && (ev.type === 'photo' || ev.type === 'pdf')) {
-                        onQuickPreviewEvidence(ev);
-                      } else if (ev.url) {
-                        window.open(ev.url, '_blank', 'noopener,noreferrer');
-                      }
-                    }}
-                  />
-                </div>
+              {validEvidences.map((ev) => (
+                <EvidenceButton
+                  key={ev.id}
+                  evidence={ev}
+                  onClick={() => {
+                    if (onQuickPreviewEvidence && (ev.type === 'photo' || ev.type === 'pdf')) {
+                      onQuickPreviewEvidence(ev);
+                    } else if (ev.url) {
+                      window.open(ev.url, '_blank', 'noopener,noreferrer');
+                    }
+                  }}
+                />
               ))}
             </div>
           ) : (
-            <div className="flex items-center justify-between py-2 px-2.5 rounded-lg bg-amber-50/80 border border-amber-200/60 text-amber-900 text-xs">
-              <span className="flex items-center gap-1.5 text-[11px] italic text-amber-800">
-                <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+            <div className="flex items-center justify-between py-1 text-[11px] text-amber-800">
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3 text-amber-600" />
                 <span>Sin evidencias vinculadas aún</span>
               </span>
               <button
                 type="button"
                 onClick={() => onQuickAddEvidence(item)}
                 disabled={readOnly}
-                className="font-bold text-blue-600 hover:underline cursor-pointer text-[11px] shrink-0 ml-2"
+                className="font-bold text-blue-600 hover:underline cursor-pointer"
               >
-                + Subir evidencia
+                + Subir
               </button>
             </div>
           )}
         </div>
 
-        {/* Collapsible Requirements and Audit Instructions */}
-        <div className="mt-3 pt-3 border-t border-slate-100">
+        {/* Collapsible Detail Section */}
+        <div className="mt-3 pt-2.5 border-t border-slate-100">
           <button
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="w-full flex items-center justify-between text-xs font-semibold text-slate-500 hover:text-slate-900 py-0.5 transition-colors cursor-pointer"
+            className="w-full flex items-center justify-between text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
           >
-            <span className="flex items-center gap-1 text-[11px]">
-              {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-blue-600" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
-              <span>{isExpanded ? 'Ocultar pautas de auditoría' : 'Ver pautas de inspección & muestreo'}</span>
+            <span className="flex items-center gap-1">
+              {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-blue-600" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+              <span>{isExpanded ? 'Ocultar guía detallada' : 'Ver pautas y documentos esperados'}</span>
             </span>
-            <span className="text-[10px] font-mono text-gray-400">
-              Fila #{item.rowNumber}
+            <span className="font-mono text-[10px] text-slate-400">
+              #{item.rowNumber}
             </span>
           </button>
 
           {isExpanded && (
-            <div className="mt-2 pt-2 border-t border-gray-200 space-y-2 text-xs text-gray-700">
-              {item.description && (
-                <div className="bg-gray-50 p-2 rounded border border-gray-200">
-                  <span className="font-bold text-gray-800 text-[11px] block mb-0.5 uppercase tracking-wide">
-                    Descripción del Requerimiento:
+            <div className="mt-3 pt-3 border-t border-slate-200/80 space-y-2.5 text-xs animate-in fade-in duration-150">
+              {expectedDocs && (
+                <div className="bg-indigo-50/70 p-2.5 rounded-lg border border-indigo-200/70">
+                  <span className="font-bold text-indigo-950 text-[11px] block mb-0.5 uppercase tracking-wider flex items-center gap-1">
+                    <FileText className="w-3 h-3 text-indigo-600" /> Documentación y Evidencia Esperada:
                   </span>
-                  <p className="text-gray-600 leading-relaxed text-xs whitespace-pre-line">
-                    {item.description}
+                  <p className="text-indigo-900 leading-relaxed text-xs">
+                    {expectedDocs}
                   </p>
                 </div>
               )}
 
-              {item.howToAudit && (
-                <div className="bg-blue-50/50 p-2 rounded border border-blue-200/80">
-                  <span className="font-bold text-blue-900 text-[11px] block mb-0.5 uppercase tracking-wide">
-                    Cómo Auditar / Muestreo:
+              {howToAudit && (
+                <div className="bg-blue-50/60 p-2.5 rounded-lg border border-blue-200/70">
+                  <span className="font-bold text-blue-950 text-[11px] block mb-0.5 uppercase tracking-wider flex items-center gap-1">
+                    <HelpCircle className="w-3 h-3 text-blue-600" /> Cómo Comprobarlo / Muestreo:
                   </span>
-                  <p className="text-blue-950 leading-relaxed text-xs whitespace-pre-line">
-                    {item.howToAudit}
+                  <p className="text-blue-900 leading-relaxed text-xs whitespace-pre-line">
+                    {howToAudit}
                   </p>
+                </div>
+              )}
+
+              {item.responsible && (
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-600 bg-slate-50 px-2 py-1.5 rounded-md border border-slate-200">
+                  <User className="w-3 h-3 text-slate-400" />
+                  <span><strong>Responsable:</strong> {item.responsible}</span>
                 </div>
               )}
 
               {item.finding && (
-                <div className="bg-red-50/60 p-2 rounded border border-red-200/80">
-                  <span className="font-bold text-red-900 text-[11px] block mb-0.5 uppercase tracking-wide">
-                    Hallazgo Registrado:
+                <div className="bg-rose-50 p-2.5 rounded-lg border border-rose-200">
+                  <span className="font-bold text-rose-950 text-[11px] block mb-0.5 uppercase tracking-wider flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-rose-600" /> Hallazgo / Observación:
                   </span>
-                  <p className="text-red-950 leading-relaxed text-xs">
+                  <p className="text-rose-900 leading-relaxed text-xs">
                     {item.finding}
                   </p>
+                </div>
+              )}
+
+              {item.internalNotes && (
+                <div className="text-[11px] text-slate-500 italic px-1">
+                  Nota interna: {item.internalNotes}
                 </div>
               )}
             </div>
           )}
         </div>
       </div>
-    </div>
+    </article>
   );
 };

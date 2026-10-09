@@ -1,13 +1,25 @@
-import { AuditItem, AuditStats, EvidenceType } from '../types/audit';
+import { AuditItem, AuditStats, EvidenceType, AuditActionItem } from '../types/audit';
 import { getAuditDefinition, type AuditKey } from '../data/auditConfig';
+import { enrichAuditItem } from '../data/isoNormativeMapping';
 
 const STORAGE_KEY_AUDIT_ITEMS = 'audit_evidence_portal_items_v1';
 const STORAGE_KEY_AUDIT_RUN = 'audit_evidence_portal_run_v1';
+const STORAGE_KEY_ACTION_ITEMS = 'audit_evidence_portal_actions_v1';
 const DEMO_EVIDENCE_IDS = new Set(['ev-1-1', 'ev-1-2', 'ev-2-1', 'ev-4-1', 'ev-8-1', 'ev-12-1']);
 
-const withoutDemoEvidences = (items: AuditItem[]): AuditItem[] => items.map((item) => ({
+const sanitizeEvidences = (items: AuditItem[]): AuditItem[] => items.map((item) => ({
   ...item,
-  evidences: (item.evidences || []).filter((evidence) => !DEMO_EVIDENCE_IDS.has(evidence.id)),
+  evidences: (item.evidences || [])
+    .filter((evidence) => !DEMO_EVIDENCE_IDS.has(evidence.id))
+    .map((evidence) => {
+      // Si no tiene URL utilizable, no debe figurar como verificada falsamente
+      const hasUrl = Boolean(evidence.url && evidence.url.trim().length > 0);
+      return {
+        ...evidence,
+        verified: hasUrl ? (evidence.verified ?? false) : false,
+        status: evidence.status || (hasUrl ? (evidence.verified ? 'verified' : 'linked') : 'suggested'),
+      };
+    }),
 }));
 
 const getStorageKey = (auditKey: AuditKey, scope?: string) => {
@@ -41,7 +53,9 @@ export const saveAuditRunState = (scope: string, state: AuditRunState): void => 
 
 const getInitialItems = (auditKey: AuditKey): AuditItem[] => {
   const items = getAuditDefinition(auditKey).items;
-  if (auditKey !== 'pcgc') return withoutDemoEvidences(items);
+  if (auditKey !== 'pcgc') {
+    return sanitizeEvidences(items).map(enrichAuditItem);
+  }
 
   return items.map((item) => ({
     ...item,
@@ -60,7 +74,8 @@ export const getStoredAuditItems = (auditKey: AuditKey = 'iso9001', scope?: stri
     if (data) {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return withoutDemoEvidences(parsed);
+        const sanitized = sanitizeEvidences(parsed);
+        return auditKey === 'iso9001' ? sanitized.map(enrichAuditItem) : sanitized;
       }
     }
   } catch (err) {
@@ -85,7 +100,11 @@ export const calculateStats = (items: AuditItem[]): AuditStats => {
     nonCompliantCount: 0,
     pendingCount: 0,
     notApplicableCount: 0,
+    totalEvaluable: 0,
     withEvidenceCount: 0,
+    verifiedEvidencesCount: 0,
+    pendingValidationEvidencesCount: 0,
+    missingEvidenceCount: 0,
     totalEvidencesCount: 0,
     evidenceTypeCounts: {
       photo: 0,
@@ -99,8 +118,13 @@ export const calculateStats = (items: AuditItem[]): AuditStats => {
     pvCount: 0,
     vCount: 0,
     completionRate: 0,
+    declarativeComplianceRate: 0,
+    documentaryPreparationRate: 0,
     evidenceCoverageRate: 0,
+    prioritiesCount: 0,
   };
+
+  let itemsWithVerifiedEvidence = 0;
 
   items.forEach((item) => {
     if (item.status === 'cumplida') stats.compliantCount++;
@@ -113,29 +137,85 @@ export const calculateStats = (items: AuditItem[]): AuditStats => {
     if (item.v) stats.vCount++;
 
     const evidences = item.evidences || [];
-    if (evidences.length > 0) {
+    const validEvidences = evidences.filter((ev) => Boolean(ev.url && ev.url.trim().length > 0));
+
+    if (validEvidences.length > 0) {
       stats.withEvidenceCount++;
-      stats.totalEvidencesCount += evidences.length;
-      evidences.forEach((ev) => {
+      stats.totalEvidencesCount += validEvidences.length;
+
+      let hasVerified = false;
+      validEvidences.forEach((ev) => {
         const type: EvidenceType = ev.type || 'other';
         stats.evidenceTypeCounts[type] = (stats.evidenceTypeCounts[type] || 0) + 1;
+        if (ev.verified) {
+          stats.verifiedEvidencesCount++;
+          hasVerified = true;
+        } else {
+          stats.pendingValidationEvidencesCount++;
+        }
       });
+
+      if (hasVerified) {
+        itemsWithVerifiedEvidence++;
+      }
+    }
+
+    // Identificar prioridades de revisión: No cumplidas, pendientes sin evidencia o con hallazgo registrado
+    const isPriority = 
+      item.status === 'no_cumplida' ||
+      (item.status === 'en_progreso') ||
+      (item.status === 'pendiente' && validEvidences.length === 0) ||
+      Boolean(item.finding && item.finding.trim().length > 0);
+
+    if (isPriority && item.status !== 'no_aplica') {
+      stats.prioritiesCount++;
     }
   });
 
   const evaluableCount = stats.totalItems - stats.notApplicableCount;
-  stats.completionRate = evaluableCount > 0 ? Math.round((stats.compliantCount / evaluableCount) * 100) : 0;
-  stats.evidenceCoverageRate = stats.totalItems > 0 ? Math.round((stats.withEvidenceCount / stats.totalItems) * 100) : 0;
+  stats.totalEvaluable = Math.max(0, evaluableCount);
+  stats.missingEvidenceCount = Math.max(0, stats.totalEvaluable - stats.withEvidenceCount);
+
+  stats.declarativeComplianceRate = evaluableCount > 0 ? Math.round((stats.compliantCount / evaluableCount) * 100) : 0;
+  stats.completionRate = stats.declarativeComplianceRate;
+  stats.documentaryPreparationRate = evaluableCount > 0 ? Math.round((itemsWithVerifiedEvidence / evaluableCount) * 100) : 0;
+  stats.evidenceCoverageRate = evaluableCount > 0 ? Math.round((stats.withEvidenceCount / evaluableCount) * 100) : 0;
 
   return stats;
 };
 
-export const exportAuditDataToJSON = (items: AuditItem[]): void => {
+// ==========================================
+// Gestor de Tareas Pendientes y Seguimiento
+// ==========================================
+
+export const getStoredActionItems = (scope: string): AuditActionItem[] => {
+  try {
+    const data = localStorage.getItem(`${STORAGE_KEY_ACTION_ITEMS}_${scope}`);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (err) {
+    console.error('Error loading action items from localStorage:', err);
+  }
+  return [];
+};
+
+export const saveStoredActionItems = (scope: string, items: AuditActionItem[]): void => {
+  try {
+    localStorage.setItem(`${STORAGE_KEY_ACTION_ITEMS}_${scope}`, JSON.stringify(items));
+  } catch (err) {
+    console.error('Error saving action items to localStorage:', err);
+  }
+};
+
+export const exportAuditDataToJSON = (items: AuditItem[], actionItems: AuditActionItem[] = []): void => {
   const exportPayload = {
     exportDate: new Date().toISOString(),
-    version: '1.0',
+    version: '2.0-iso-redesign',
     totalItems: items.length,
     items,
+    actionItems,
   };
   const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -149,16 +229,19 @@ export const exportAuditDataToJSON = (items: AuditItem[]): void => {
 export const exportAuditDataToCSV = (items: AuditItem[]): void => {
   const headers = [
     'Código',
+    'Cláusula ISO',
+    'Origen',
     'Capítulo',
     'Sección',
-    'Pregunta',
     'Requerimiento',
-    'Descripción',
-    'Cómo Auditar',
+    'Qué se verifica',
+    'Qué mostrar',
+    'Cómo comprobarlo',
     'PV',
     'V',
     'Estado',
-    'Cantidad Evidencias',
+    'Total Evidencias',
+    'Evidencias Verificadas',
     'Enlaces de Evidencia',
     'Hallazgo',
     'Comentario',
@@ -172,21 +255,26 @@ export const exportAuditDataToCSV = (items: AuditItem[]): void => {
 
   const rows = items.map((item) => {
     const evidenceLinksStr = (item.evidences || [])
-      .map((e) => `[${e.type.toUpperCase()}] ${e.title}: ${e.url}`)
+      .map((e) => `[${e.type.toUpperCase()}${e.verified ? ' (VERIFICADA)' : ''}] ${e.title}: ${e.url}`)
       .join(' | ');
+
+    const verifiedCount = (item.evidences || []).filter((e) => e.verified).length;
 
     return [
       escapeCSV(item.code),
+      escapeCSV(item.isoClause || ''),
+      escapeCSV(item.originType || ''),
       escapeCSV(item.chapter),
       escapeCSV(item.section),
-      escapeCSV(item.question),
       escapeCSV(item.requirement),
-      escapeCSV(item.description),
-      escapeCSV(item.howToAudit),
+      escapeCSV(item.whatToVerify || item.description),
+      escapeCSV(item.whatToShow || ''),
+      escapeCSV(item.howToCheck || item.howToAudit),
       item.pv ? 'X' : '',
       item.v ? 'X' : '',
       escapeCSV(item.status),
       (item.evidences || []).length.toString(),
+      verifiedCount.toString(),
       escapeCSV(evidenceLinksStr),
       escapeCSV(item.finding),
       escapeCSV(item.comment),
@@ -199,7 +287,7 @@ export const exportAuditDataToCSV = (items: AuditItem[]): void => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `matriz_auditoria_evidencias_${new Date().toISOString().split('T')[0]}.csv`;
+  link.download = `matriz_auditoria_iso_${new Date().toISOString().split('T')[0]}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 };

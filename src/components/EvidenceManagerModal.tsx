@@ -3,27 +3,31 @@ import {
   AuditItem, 
   EvidenceLink, 
   EvidenceType, 
-  ComplianceStatus
+  ComplianceStatus,
+  EvidenceStatus
 } from '../types/audit';
 import { uploadEvidenceToAppsScript } from '../services/googleSyncService';
 import type { AuditKey, AuditRunContext } from '../data/auditConfig';
 import { EVIDENCE_CONFIG } from './EvidenceTypeBadge';
+import { OriginBadge } from './common/OriginBadge';
 import { 
   X, 
   Plus, 
   Trash2, 
   ExternalLink, 
   FileCheck2, 
-  Camera, 
-  FileText, 
-  FileSpreadsheet, 
   Globe, 
-  Workflow, 
-  HardDrive,
-  Save,
-  HelpCircle,
-  Pencil,
-  UploadCloud
+  Save, 
+  Pencil, 
+  UploadCloud,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Calendar,
+  User,
+  ShieldCheck,
+  FileText,
+  Info
 } from 'lucide-react';
 
 interface EvidenceManagerModalProps {
@@ -40,7 +44,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   isOpen,
   onClose,
   onSaveItem,
-  auditKey = 'iso9001' as AuditKey,
+  auditKey = 'iso9001',
   auditRun,
 }) => {
   if (!isOpen || !item) return null;
@@ -48,36 +52,41 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   const [formData, setFormData] = useState<AuditItem>({ ...item });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // New evidence form state
-  const [newType, setNewType] = useState<EvidenceType>('photo');
-  const [newTitle, setNewTitle] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [newFile, setNewFile] = useState<File | null>(null);
-  const [pendingFiles, setPendingFiles] = useState<Record<string, File>>({});
+  // States
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Add Link form state
   const [isLinkFormOpen, setIsLinkFormOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkTitle, setLinkTitle] = useState('');
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [linkType, setLinkType] = useState<EvidenceType>('web');
+  const [linkNotes, setLinkNotes] = useState('');
+  const [linkVerified, setLinkVerified] = useState(false);
+
+  // Edit evidence state
   const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
   const [editType, setEditType] = useState<EvidenceType>('photo');
   const [editTitle, setEditTitle] = useState('');
+  const [editUrl, setEditUrl] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [editVerified, setEditVerified] = useState(false);
+  const [editValidUntil, setEditValidUntil] = useState('');
+  const [editVerifiedBy, setEditVerifiedBy] = useState('');
 
-  const handleFileSelected = (file: File | null) => {
-    if (!file) return;
-    setNewFile(file);
-    setNewTitle(file.name);
-    setNewType(file.type.startsWith('image/') ? 'photo' : file.type === 'application/pdf' ? 'pdf' : 'other');
-    setErrorMsg('');
-  };
-
+  // Direct Upload handler
   const handleInstantUpload = async (file: File | null) => {
     if (!file || isSaving) return;
 
-    const type: EvidenceType = file.type.startsWith('image/') ? 'photo' : file.type === 'application/pdf' ? 'pdf' : 'other';
+    const type: EvidenceType = file.type.startsWith('image/') 
+      ? 'photo' 
+      : file.type === 'application/pdf' 
+      ? 'pdf' 
+      : file.type.includes('sheet') || file.type.includes('excel') || file.name.endsWith('.xlsx') || file.name.endsWith('.csv')
+      ? 'sheet'
+      : 'other';
+
     const evidence: EvidenceLink = {
       id: `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       type,
@@ -85,229 +94,264 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
       url: '',
       addedAt: new Date().toISOString().split('T')[0],
       verified: false,
+      status: 'pending_review',
     };
 
     setErrorMsg('');
     setIsSaving(true);
-    setSaveMessage('Subiendo archivo...');
+    setSaveMessage('Subiendo archivo a Google Drive...');
     try {
-      const uploaded = await uploadEvidenceToAppsScript(item, evidence, file, auditKey, auditRun);
+      const key = (auditKey as AuditKey) || 'iso9001';
+      const uploaded = await uploadEvidenceToAppsScript(item, evidence, file, key, auditRun);
       const updatedItem: AuditItem = {
         ...formData,
-        evidences: [...(formData.evidences || []), uploaded],
-        status: formData.status === 'pendiente' ? 'cumplida' : formData.status,
+        evidences: [...(formData.evidences || []), { ...uploaded, verified: false, status: 'linked' }],
         lastUpdated: new Date().toISOString().split('T')[0],
       };
       setFormData(updatedItem);
       onSaveItem(updatedItem);
     } catch (error: any) {
-      setErrorMsg(error.message || 'No se pudo guardar el archivo.');
+      setErrorMsg(error.message || 'No se pudo subir el archivo.');
     } finally {
       setIsSaving(false);
       setSaveMessage('');
     }
   };
 
+  // Add URL Link handler
   const handleAddLink = (event: React.FormEvent) => {
     event.preventDefault();
     try {
-      const url = new URL(linkUrl.trim()).toString();
+      const trimmedUrl = linkUrl.trim();
+      if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+        throw new Error('La URL debe comenzar con http:// o https://');
+      }
+      const url = new URL(trimmedUrl).toString();
       const evidence: EvidenceLink = {
         id: `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        type: 'web',
+        type: linkType,
         title: linkTitle.trim() || new URL(url).hostname,
         url,
+        description: linkNotes.trim(),
         addedAt: new Date().toISOString().split('T')[0],
-        verified: true,
+        verified: linkVerified,
+        status: linkVerified ? 'verified' : 'linked',
+        verifiedAt: linkVerified ? new Date().toISOString().split('T')[0] : undefined,
       };
+
       const updatedItem: AuditItem = {
         ...formData,
         evidences: [...(formData.evidences || []), evidence],
-        status: formData.status === 'pendiente' ? 'cumplida' : formData.status,
         lastUpdated: new Date().toISOString().split('T')[0],
       };
       setFormData(updatedItem);
       onSaveItem(updatedItem);
       setLinkUrl('');
       setLinkTitle('');
+      setLinkNotes('');
+      setLinkVerified(false);
       setIsLinkFormOpen(false);
       setErrorMsg('');
-    } catch {
-      setErrorMsg('Pegá un enlace válido que comience con https://');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Ingresá un enlace web válido que comience con https://');
     }
   };
 
-  const handleAddEvidence = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newFile) {
-      setErrorMsg('Selecciona el archivo que quieres guardar en Google Drive.');
+  // Delete evidence with confirmation
+  const handleDeleteEvidence = (evidenceId: string) => {
+    if (!window.confirm('¿Quitar este vínculo de evidencia del requisito? El archivo en Drive permanecerá seguro.')) {
       return;
     }
-
-    const typeConfig = EVIDENCE_CONFIG[newType];
-    const generatedTitle = newTitle.trim() || newFile.name || `${typeConfig.label} - ${item.code}`;
-
-    const newEvidence: EvidenceLink = {
-      id: `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      type: newType,
-      title: generatedTitle,
-      url: '',
-      description: newDescription.trim(),
-      addedAt: new Date().toISOString().split('T')[0],
-      verified: false,
+    const updatedEvidences = (formData.evidences || []).filter((e) => e.id !== evidenceId);
+    const updatedItem = {
+      ...formData,
+      evidences: updatedEvidences,
+      lastUpdated: new Date().toISOString().split('T')[0],
     };
-
-    setFormData((prev) => ({
-      ...prev,
-      evidences: [...(prev.evidences || []), newEvidence],
-      // If adding first evidence and status was pending, suggest completed or in progress
-      status: prev.status === 'pendiente' ? 'cumplida' : prev.status,
-    }));
-    setPendingFiles((prev) => ({ ...prev, [newEvidence.id]: newFile! }));
-
-    // Reset add form
-    setNewTitle('');
-    setNewFile(null);
-    setNewDescription('');
-    setErrorMsg('');
-    setShowAddForm(false);
+    setFormData(updatedItem);
+    onSaveItem(updatedItem);
   };
 
-  const handleDeleteEvidence = (evidenceId: string) => {
-    if (!window.confirm('Se quitará este vínculo de la auditoría. El archivo original permanecerá guardado en Drive.')) return;
-    setFormData((prev) => ({
-      ...prev,
-      evidences: (prev.evidences || []).filter((e) => e.id !== evidenceId),
-    }));
-    setPendingFiles((prev) => {
-      const next = { ...prev };
-      delete next[evidenceId];
-      return next;
+  // Toggle verification state directly
+  const handleToggleVerifyEvidence = (evidenceId: string) => {
+    const updatedEvidences = (formData.evidences || []).map((ev) => {
+      if (ev.id === evidenceId) {
+        const nextVerified = !ev.verified;
+        return {
+          ...ev,
+          verified: nextVerified,
+          status: (nextVerified ? 'verified' : 'linked') as EvidenceStatus,
+          verifiedAt: nextVerified ? new Date().toISOString().split('T')[0] : undefined,
+          verifiedBy: nextVerified ? (formData.responsible || 'Responsable Calidad') : undefined,
+        };
+      }
+      return ev;
     });
+
+    const updatedItem = {
+      ...formData,
+      evidences: updatedEvidences,
+      lastUpdated: new Date().toISOString().split('T')[0],
+    };
+    setFormData(updatedItem);
+    onSaveItem(updatedItem);
   };
 
+  // Start Edit
   const handleStartEdit = (evidence: EvidenceLink) => {
     setEditingEvidenceId(evidence.id);
     setEditType(evidence.type);
     setEditTitle(evidence.title);
+    setEditUrl(evidence.url || '');
     setEditDescription(evidence.description || '');
+    setEditVerified(Boolean(evidence.verified));
+    setEditValidUntil(evidence.validUntil || '');
+    setEditVerifiedBy(evidence.verifiedBy || '');
   };
 
+  // Save Edit
   const handleSaveEdit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!editingEvidenceId) return;
 
-    setFormData((prev) => ({
-      ...prev,
-      evidences: (prev.evidences || []).map((evidence) =>
-        evidence.id === editingEvidenceId
-          ? { ...evidence, type: editType, title: editTitle.trim() || evidence.title, description: editDescription.trim() }
-          : evidence
-      ),
-    }));
+    const updatedEvidences = (formData.evidences || []).map((ev) => {
+      if (ev.id === editingEvidenceId) {
+        return {
+          ...ev,
+          type: editType,
+          title: editTitle.trim() || ev.title,
+          url: editUrl.trim() || ev.url,
+          description: editDescription.trim(),
+          verified: editVerified,
+          status: (editVerified ? 'verified' : 'linked') as EvidenceStatus,
+          validUntil: editValidUntil || undefined,
+          verifiedBy: editVerifiedBy.trim() || undefined,
+          verifiedAt: editVerified ? (ev.verifiedAt || new Date().toISOString().split('T')[0]) : undefined,
+        };
+      }
+      return ev;
+    });
+
+    const updatedItem = {
+      ...formData,
+      evidences: updatedEvidences,
+      lastUpdated: new Date().toISOString().split('T')[0],
+    };
+    setFormData(updatedItem);
+    onSaveItem(updatedItem);
     setEditingEvidenceId(null);
   };
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    setErrorMsg('');
-    const pendingCount = Object.keys(pendingFiles).length;
-    setSaveMessage(pendingCount ? `Subiendo ${pendingCount} archivo${pendingCount === 1 ? '' : 's'}...` : 'Guardando cambios...');
-    try {
-      let finalEvidences = [...(formData.evidences || [])];
-      for (const [evidenceId, file] of Object.entries(pendingFiles) as Array<[string, File]>) {
-        const evidence = finalEvidences.find((itemEvidence) => itemEvidence.id === evidenceId);
-        if (!evidence) continue;
-        const uploadedEvidence = await uploadEvidenceToAppsScript(item, evidence, file, auditKey, auditRun);
-        finalEvidences = finalEvidences.map((itemEvidence) => itemEvidence.id === evidenceId ? uploadedEvidence : itemEvidence);
-      }
-      onSaveItem({ ...formData, evidences: finalEvidences, lastUpdated: new Date().toISOString().split('T')[0] });
-      onClose();
-    } catch (error: any) {
-      setErrorMsg(error.message || 'No se pudo guardar la evidencia en Google Drive.');
-    } finally {
-      setIsSaving(false);
-      setSaveMessage('');
-    }
+  // Save full form
+  const handleSaveModal = () => {
+    const updated = {
+      ...formData,
+      lastUpdated: new Date().toISOString().split('T')[0],
+    };
+    onSaveItem(updated);
+    onClose();
   };
 
+  const validEvidences = (formData.evidences || []).filter((e) => Boolean(e.url && e.url.trim().length > 0));
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
+      <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
         {/* Modal Header */}
-        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="px-2.5 py-1 text-xs font-bold font-mono bg-indigo-600 rounded text-white">
+        <div className="px-6 py-4 bg-slate-950 text-white flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="px-2.5 py-1 text-xs font-mono font-bold bg-blue-600 rounded-md text-white shrink-0">
               {item.code}
             </span>
-            <div>
-              <h2 className="text-base font-bold text-white leading-tight">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-base font-bold text-white truncate leading-snug">
                 {item.requirement}
               </h2>
-              <p className="text-xs text-slate-300 truncate max-w-md">
+              <p className="text-xs text-slate-400 truncate">
                 {item.chapter} › {item.section}
               </p>
             </div>
-
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Cerrar modal"
-            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+            className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          {errorMsg && !showAddForm && (
-            <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
-              {errorMsg}
-            </p>
+        <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-5">
+          {errorMsg && (
+            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
           )}
-          {/* Requirement summary & instructions */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-xs">
-            {item.description && (
+
+          {/* Normative Reference & Expected Documents */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5 text-xs">
+            <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-200/60">
+              {item.originType && <OriginBadge originType={item.originType} size="sm" fullLabel />}
+              {item.isoClause && (
+                <span className="font-semibold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                  {item.isoClause}
+                </span>
+              )}
+            </div>
+
+            {item.whatToVerify && (
               <div>
-                <span className="font-bold text-slate-800 block mb-0.5">Descripción:</span>
-                <p className="text-slate-600 whitespace-pre-line leading-relaxed">{item.description}</p>
+                <span className="font-bold text-slate-800 block mb-0.5">Qué se verifica:</span>
+                <p className="text-slate-600 leading-relaxed">{item.whatToVerify}</p>
               </div>
             )}
-            {item.howToAudit && (
-              <div className="pt-2 border-t border-slate-200">
-                <span className="font-bold text-blue-900 block mb-0.5">Cómo Auditar / Verificación:</span>
-                <p className="text-blue-950 whitespace-pre-line leading-relaxed">{item.howToAudit}</p>
+
+            {item.whatToShow && (
+              <div className="pt-2 border-t border-slate-200/60 text-indigo-950">
+                <span className="font-bold text-indigo-900 block mb-0.5 flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5 text-indigo-600" /> Documentación esperada:
+                </span>
+                <p className="text-indigo-900/90 leading-relaxed">{item.whatToShow}</p>
               </div>
             )}
           </div>
 
-          {/* EVIDENCES LIST & MANAGEMENT */}
+          {/* EVIDENCES SECTION */}
           <div>
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <FileCheck2 className="w-4 h-4 text-indigo-600" />
-                <span>Enlaces y Evidencias de este punto ({formData.evidences?.length || 0})</span>
-              </h3>
-              <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                  <FileCheck2 className="w-4 h-4 text-blue-600" />
+                  <span>Evidencias Documentales ({validEvidences.length})</span>
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Vinculá archivos o enlaces y confirmá su verificación explícita.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isSaving}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-xs cursor-pointer disabled:opacity-60"
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
-                  <span>{isSaving ? 'Subiendo...' : 'Subir archivo'}</span>
+                  <span>{isSaving ? saveMessage || 'Subiendo...' : 'Subir archivo'}</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={() => setIsLinkFormOpen((open) => !open)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
                 >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>Agregar enlace</span>
+                  <Globe className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Pegar enlace</span>
                 </button>
+
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -321,198 +365,196 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
               </div>
             </div>
 
+            {/* Form to add URL Link */}
             {isLinkFormOpen && (
-              <form onSubmit={handleAddLink} className="mb-4 grid gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 sm:grid-cols-[1fr_180px_auto]">
-                <input
-                  type="url"
-                  required
-                  autoFocus
-                  placeholder="https://sitio-o-documento.com"
-                  value={linkUrl}
-                  onChange={(event) => setLinkUrl(event.target.value)}
-                  className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Nombre (opcional)"
-                  value={linkTitle}
-                  onChange={(event) => setLinkTitle(event.target.value)}
-                  className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
-                />
-                <button type="submit" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">Guardar enlace</button>
-              </form>
-            )}
-
-            {/* Add New Evidence Form */}
-            {showAddForm && (
-              <form onSubmit={handleAddEvidence} className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-4 mb-4 space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-indigo-200/60">
-                  <h4 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
-                    <Plus className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Subir archivo a Google Drive</span>
-                  </h4>
+              <form onSubmit={handleAddLink} className="mb-4 bg-blue-50/60 border border-blue-200 rounded-xl p-3.5 space-y-3">
+                <div className="flex items-center justify-between border-b border-blue-200/60 pb-1.5">
+                  <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-blue-600" /> Vincular Enlace Web o Drive
+                  </span>
                   <button
                     type="button"
-                    onClick={() => setShowAddForm(false)}
-                    className="text-indigo-600 hover:text-indigo-900 text-xs font-semibold cursor-pointer"
+                    onClick={() => setIsLinkFormOpen(false)}
+                    className="text-xs text-slate-500 hover:text-slate-800"
                   >
                     Cancelar
                   </button>
                 </div>
 
-                {errorMsg && (
-                  <p className="text-xs text-rose-700 bg-rose-100/80 px-2.5 py-1.5 rounded-md font-medium">
-                    {errorMsg}
-                  </p>
-                )}
-
-                {/* Evidence Type Selection Buttons */}
-                <div className="hidden">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Tipo de evidencia:
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {[
-                      { type: 'photo', label: '📸 Foto / Imagen', icon: Camera },
-                      { type: 'pdf', label: '📄 PDF / Documento', icon: FileText },
-                      { type: 'sheet', label: '📊 Google Sheet', icon: FileSpreadsheet },
-                      { type: 'web', label: '🌐 Web / Portal', icon: Globe },
-                      { type: 'sop', label: '⚙️ Proceso / Diagrama', icon: Workflow },
-                      { type: 'drive', label: '🗂️ Google Drive', icon: HardDrive },
-                    ].map((t) => (
-                      <button
-                        key={t.type}
-                        type="button"
-                        onClick={() => setNewType(t.type as EvidenceType)}
-                        className={`flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium rounded-lg border text-left transition-all cursor-pointer ${
-                          newType === t.type
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span>{t.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Title */}
-                <div className="hidden">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Título o Nombre de la Evidencia:
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej: Registro Fotográfico de Residuos, Protocolo CEM, Factura Muestra..."
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                {/* File upload */}
-                <div>
-                  <label
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      handleFileSelected(event.dataTransfer.files?.[0] || null);
-                    }}
-                    className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-indigo-200 bg-white px-5 text-center transition-colors hover:border-indigo-400 hover:bg-indigo-50/40"
-                  >
-                    <UploadCloud className="mb-2 h-8 w-8 text-indigo-500" />
-                    <span className="text-sm font-bold text-slate-800">Arrastrá un archivo aquí</span>
-                    <span className="mt-1 text-xs text-slate-500">o tocá para seleccionar una foto, PDF o documento</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">URL del documento / web:</label>
                     <input
-                      type="file"
+                      type="url"
                       required
-                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                      onChange={(event) => handleFileSelected(event.target.files?.[0] || null)}
-                      className="sr-only"
-                    />
-                    {newFile && <span className="mt-3 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">{newFile.name}</span>}
-                  </label>
-                  <div className="hidden">
-                    <input
-                      type="file"
-                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                      onChange={(e) => handleFileSelected(e.target.files?.[0] || null)}
-                      className="flex-1 text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="https://drive.google.com/... o https://..."
+                      value={linkUrl}
+                      onChange={(e) => setLinkUrl(e.target.value)}
+                      className="w-full text-xs px-3 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Se guardará automáticamente en Drive, dentro de la carpeta de este criterio. Máximo 4 MB por archivo.
-                  </p>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Tipo:</label>
+                    <select
+                      value={linkType}
+                      onChange={(e) => setLinkType(e.target.value as EvidenceType)}
+                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none"
+                    >
+                      <option value="web">🌐 Web / Portal</option>
+                      <option value="drive">🗂️ Google Drive</option>
+                      <option value="sheet">📊 Google Sheet</option>
+                      <option value="pdf">📄 PDF / Documento</option>
+                      <option value="photo">📸 Foto / Imagen</option>
+                      <option value="sop">⚙️ Proceso / SOP</option>
+                      <option value="other">📎 Otro</option>
+                    </select>
+                  </div>
                 </div>
 
-                {/* Description */}
-                <div className="hidden">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Descripción / Nota explicativa (opcional):
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Título descriptivo:</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Registro Fotográfico de Residuos, Protocolo..."
+                      value={linkTitle}
+                      onChange={(e) => setLinkTitle(e.target.value)}
+                      className="w-full text-xs px-3 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Nota u observación:</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Muestra tomada en auditoría previa..."
+                      value={linkNotes}
+                      onChange={(e) => setLinkNotes(e.target.value)}
+                      className="w-full text-xs px-3 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={linkVerified}
+                      onChange={(e) => setLinkVerified(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span>Marcar evidencia como verificada</span>
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Ej: Muestra tomada el 10/08 correspondiente a auditoría interna."
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                    className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
 
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddForm(false)}
-                    className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200 rounded-lg cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
                   <button
                     type="submit"
-                    className="inline-flex items-center gap-1 px-4 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer"
+                    className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Agregar a la auditoría</span>
+                    Guardar vínculo
                   </button>
                 </div>
               </form>
             )}
 
-            {/* List of existing evidences */}
-            <div className="space-y-2.5">
+            {/* List of evidences */}
+            <div className="space-y-2">
               {(formData.evidences || []).length > 0 ? (
                 formData.evidences.map((ev) => {
                   const typeCfg = EVIDENCE_CONFIG[ev.type] || EVIDENCE_CONFIG.other;
                   const Icon = typeCfg.icon;
+                  const hasUrl = Boolean(ev.url && ev.url.trim().length > 0);
 
                   if (editingEvidenceId === ev.id) {
                     return (
-                      <form key={ev.id} onSubmit={handleSaveEdit} className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4">
-                        <div className="flex items-center gap-2 text-xs font-bold text-indigo-950">
-                          <Pencil className="w-4 h-4" /> Editar evidencia
+                      <form key={ev.id} onSubmit={handleSaveEdit} className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/50 p-4">
+                        <div className="flex items-center gap-2 text-xs font-bold text-blue-950">
+                          <Pencil className="w-3.5 h-3.5" /> Editar Detalle de Evidencia
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <label className="text-xs font-semibold text-slate-700">Tipo
-                            <select value={editType} onChange={(e) => setEditType(e.target.value as EvidenceType)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Tipo</label>
+                            <select
+                              value={editType}
+                              onChange={(e) => setEditType(e.target.value as EvidenceType)}
+                              className="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-1.5"
+                            >
                               <option value="photo">Foto / Imagen</option>
                               <option value="pdf">PDF / Documento</option>
-                              <option value="sheet">Google Sheet / Matriz</option>
+                              <option value="sheet">Google Sheet</option>
                               <option value="web">Web / Portal</option>
-                              <option value="sop">Proceso / Diagrama</option>
-                              <option value="drive">Google Drive / Carpeta</option>
-                              <option value="other">Otro enlace</option>
+                              <option value="sop">Proceso / SOP</option>
+                              <option value="drive">Google Drive</option>
+                              <option value="other">Otro</option>
                             </select>
-                          </label>
-                          <label className="text-xs font-semibold text-slate-700">Nombre
-                            <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs" />
-                          </label>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Título</label>
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              className="w-full text-xs rounded-lg border border-slate-300 bg-white px-3 py-1.5"
+                            />
+                          </div>
                         </div>
-                        <label className="block text-xs font-semibold text-slate-700">Descripción
-                          <input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs" />
-                        </label>
-                        <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => setEditingEvidenceId(null)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-white">Cancelar</button>
-                          <button type="submit" className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700">Guardar cambios</button>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">URL / Enlace</label>
+                          <input
+                            type="url"
+                            value={editUrl}
+                            onChange={(e) => setEditUrl(e.target.value)}
+                            placeholder="https://..."
+                            className="w-full text-xs rounded-lg border border-slate-300 bg-white px-3 py-1.5"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Descripción / Nota</label>
+                            <input
+                              type="text"
+                              value={editDescription}
+                              onChange={(e) => setEditDescription(e.target.value)}
+                              className="w-full text-xs rounded-lg border border-slate-300 bg-white px-3 py-1.5"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Vigencia / Fecha de revisión (opcional)</label>
+                            <input
+                              type="date"
+                              value={editValidUntil}
+                              onChange={(e) => setEditValidUntil(e.target.value)}
+                              className="w-full text-xs rounded-lg border border-slate-300 bg-white px-3 py-1.5"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1">
+                          <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={editVerified}
+                              onChange={(e) => setEditVerified(e.target.checked)}
+                              className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span>Evidencia verificada y conforme</span>
+                          </label>
+
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditingEvidenceId(null)}
+                              className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg cursor-pointer"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer"
+                            >
+                              Guardar cambios
+                            </button>
+                          </div>
                         </div>
                       </form>
                     );
@@ -521,50 +563,84 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                   return (
                     <div
                       key={ev.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:shadow-xs transition-all gap-3"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-all gap-3"
                     >
-                      <div className="flex items-start gap-3 min-w-0">
+                      <div className="flex items-start gap-2.5 min-w-0">
                         <div className={`p-2 rounded-lg ${typeCfg.bgClass} shrink-0`}>
                           <Icon className="w-4 h-4" />
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-bold text-slate-900 truncate">
                               {ev.title}
                             </span>
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${typeCfg.bgClass}`}>
+                            <span className={`text-[10px] font-semibold px-2 py-0.2 rounded border ${typeCfg.bgClass}`}>
                               {typeCfg.label}
                             </span>
+                            {ev.verified ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">
+                                <CheckCircle2 className="w-3 h-3" /> Verificada
+                              </span>
+                            ) : hasUrl ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded">
+                                <Clock className="w-3 h-3" /> Pendiente de revisión
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
+                                <AlertCircle className="w-3 h-3" /> Falta vincular archivo
+                              </span>
+                            )}
                           </div>
+
                           {ev.description && (
                             <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
                               {ev.description}
                             </p>
                           )}
-                          <p className={`mt-0.5 text-[11px] font-semibold ${ev.url ? 'text-emerald-700' : 'text-amber-700'}`}>
-                            {ev.url ? 'Evidencia guardada' : 'Pendiente de subir'}
-                          </p>
+
+                          <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-1">
+                            {ev.addedAt && <span>Alta: {ev.addedAt}</span>}
+                            {ev.validUntil && <span>Vigencia: {ev.validUntil}</span>}
+                          </div>
                         </div>
                       </div>
 
                       {/* Action buttons */}
                       <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
-                        {ev.url && <a
-                          href={ev.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition-colors"
-                          title="Abrir evidencia en nueva pestaña"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>Abrir</span>
-                        </a>}
+                        {hasUrl && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleVerifyEvidence(ev.id)}
+                            title={ev.verified ? 'Marcar como no verificada' : 'Marcar como verificada'}
+                            className={`p-1.5 rounded-lg border transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1 ${
+                              ev.verified
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span className="text-[11px] hidden sm:inline">{ev.verified ? 'Verificada' : 'Verificar'}</span>
+                          </button>
+                        )}
+
+                        {hasUrl && (
+                          <a
+                            href={ev.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg border border-slate-200 text-blue-600 hover:bg-blue-50 transition-colors inline-flex items-center gap-1 text-xs font-semibold"
+                            title="Abrir en pestaña nueva"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span className="text-[11px] hidden sm:inline">Abrir</span>
+                          </a>
+                        )}
 
                         <button
                           type="button"
                           onClick={() => handleStartEdit(ev)}
                           title="Editar evidencia"
-                          className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                          className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
@@ -572,7 +648,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleDeleteEvidence(ev.id)}
-                          title="Quitar vínculo (el archivo permanece en Drive)"
+                          title="Quitar vínculo"
                           className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -583,39 +659,39 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                 })
               ) : (
                 <div className="text-center py-6 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                  <FileCheck2 className="w-8 h-8 text-slate-400 mx-auto mb-1.5" />
+                  <FileCheck2 className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
                   <p className="text-xs font-medium text-slate-600">
                     Aún no hay evidencias adjuntas para este criterio.
                   </p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Haz clic en "+ Subir evidencia" para cargar una foto, PDF o documento a Drive.
+                    Hacé clic en "+ Subir archivo" o "Pegar enlace" para respaldar este requisito.
                   </p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* AUDIT STATUS & FINDINGS */}
-          <div className="border-t border-slate-200 pt-4 space-y-4">
+          {/* AUDIT STATUS, RESPONSIBLE & FINDINGS */}
+          <div className="border-t border-slate-200 pt-4 space-y-3.5">
             <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-              Estado de Auditoría & Conformidad
+              Estado de Auditoría y Hallazgos
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Estado de Cumplimiento:
+                  Estado de Conformidad:
                 </label>
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as ComplianceStatus })}
-                  className="w-full text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer"
+                  className="w-full text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 bg-white focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
                 >
-                  <option value="cumplida">✓ Cumplida (Conforme)</option>
-                  <option value="en_progreso">⏳ En Progreso (Evidencia Parcial)</option>
-                  <option value="no_cumplida">✗ No Cumplida (No Conforme)</option>
+                  <option value="cumplida">✓ Cumple (Conforme)</option>
+                  <option value="en_progreso">⏳ En Progreso (Evidencia Parcial / En Proceso)</option>
+                  <option value="no_cumplida">✗ No Cumple (No Conforme / Desvío)</option>
                   <option value="no_aplica">⊘ No Aplica</option>
-                  <option value="pendiente">Pendiente de Revisión</option>
+                  <option value="pendiente">Pendiente de Verificación</option>
                 </select>
               </div>
 
@@ -625,47 +701,46 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="Ej: Calidad, Gerencia Posventa, Jefe de Taller..."
+                  placeholder="Ej: Responsable de Calidad, Jefe de Taller..."
                   value={formData.responsible || ''}
                   onChange={(e) => setFormData({ ...formData, responsible: e.target.value })}
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Descripción del Hallazgo / Observación:
+                Hallazgo / Observación de Auditoría:
               </label>
               <textarea
                 rows={2}
-                placeholder="Indica hallazgos detectados, muestras verificadas o notas para la auditoría..."
+                placeholder="Describí observaciones, desvíos detectados o notas para la auditoría..."
                 value={formData.finding || ''}
                 onChange={(e) => setFormData({ ...formData, finding: e.target.value })}
-                className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
           </div>
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
           >
-            Cancelar
+            Cerrar
           </button>
 
           <button
             type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors cursor-pointer disabled:opacity-60"
+            onClick={handleSaveModal}
+            className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            <span>{isSaving ? saveMessage || 'Subiendo a Drive...' : Object.keys(pendingFiles).length ? 'Subir y Guardar' : 'Guardar Cambios'}</span>
+            <span>Guardar cambios</span>
           </button>
         </div>
       </div>

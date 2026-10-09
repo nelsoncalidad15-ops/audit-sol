@@ -3,7 +3,9 @@ import {
   AuditItem, 
   ComplianceStatus, 
   EvidenceType, 
-  EvidenceLink 
+  EvidenceLink,
+  OriginType,
+  AuditActionItem 
 } from './types/audit';
 import { 
   getStoredAuditItems, 
@@ -11,17 +13,30 @@ import {
   calculateStats,
   getAuditRunState,
   saveAuditRunState,
+  getStoredActionItems,
+  saveStoredActionItems,
+  exportAuditDataToJSON,
+  exportAuditDataToCSV,
   type AuditRunState
 } from './services/storageService';
 import { pushAllToAppsScript } from './services/googleSyncService';
-import { getAuditDefinition, getAuditRunLabel, getAuditRunStorageKey, type AuditRunContext } from './data/auditConfig';
-import { Header } from './components/Header';
-import { AuditItemCard, STATUS_CONFIG } from './components/AuditItemCard';
-import { EvidenceButton } from './components/EvidenceTypeBadge';
+import { 
+  getAuditDefinition, 
+  getAuditRunLabel, 
+  getAuditRunStorageKey, 
+  type AuditRunContext 
+} from './data/auditConfig';
+import { Header, type IsoActiveTab } from './components/Header';
+import { IsoSummaryView } from './components/iso/IsoSummaryView';
+import { IsoChecklistView } from './components/iso/IsoChecklistView';
+import { IsoPendingTasksView } from './components/iso/IsoPendingTasksView';
+import { ActionItemModal } from './components/iso/ActionItemModal';
+import { AuditMode } from './components/AuditMode';
 import { EvidenceManagerModal } from './components/EvidenceManagerModal';
 import { AuditReportModal } from './components/AuditReportModal';
 import { QuickViewerModal } from './components/QuickViewerModal';
-import { AuditMode } from './components/AuditMode';
+import { AuditItemCard, STATUS_CONFIG } from './components/AuditItemCard';
+import { EvidenceButton } from './components/EvidenceTypeBadge';
 import { 
   Search, 
   Filter, 
@@ -34,27 +49,13 @@ import {
   Table as TableIcon,
   Plus,
   Edit,
-  ExternalLink,
-  BookOpen,
-  Building2,
-  Wrench,
-  ShoppingBag,
-  Camera,
   FileText,
   FileSpreadsheet,
   Globe,
   Workflow,
   HardDrive,
-  FileCheck2,
-  HelpCircle
+  FileCheck2
 } from 'lucide-react';
-
-const CHAPTER_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  '1. Gestión y control de documentos': BookOpen,
-  '2. Área e instalaciones': Building2,
-  '3. Posventa': Wrench,
-  '4. Procesos de venta': ShoppingBag,
-};
 
 interface AppProps {
   auditRun: AuditRunContext;
@@ -63,31 +64,46 @@ interface AppProps {
 
 export default function App({ auditRun, onChangeAudit }: AppProps) {
   const activeAuditKey = auditRun.auditKey;
+  const isIso = activeAuditKey === 'iso9001';
   const activeAudit = getAuditDefinition(activeAuditKey);
   const storageScope = getAuditRunStorageKey(auditRun);
-  // Main state
+
+  // Core audit items & run state
   const [items, setItems] = useState<AuditItem[]>(() => getStoredAuditItems(activeAuditKey, storageScope));
   const [auditState, setAuditState] = useState<AuditRunState>(() => getAuditRunState(storageScope));
+  const [actionItems, setActionItems] = useState<AuditActionItem[]>(() => getStoredActionItems(storageScope));
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
 
-  // View Mode: table (high-density) or cards
-  const [viewMode, setViewMode] = useState<'table' | 'cards' | 'audit'>('table');
+  // ISO Navigation tabs
+  const [activeIsoTab, setActiveIsoTab] = useState<IsoActiveTab>('summary');
 
-  // Filters state
+  // PCGC View Mode: table or cards or audit
+  const [pcgcViewMode, setPcgcViewMode] = useState<'table' | 'cards' | 'audit'>('table');
+  const [isoViewMode, setIsoViewMode] = useState<'table' | 'cards'>('table');
+
+  // ISO Checklist Filters state
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedChapter, setSelectedChapter] = useState('all');
-  const [selectedEvidenceType, setSelectedEvidenceType] = useState<EvidenceType | 'all'>('all');
+  const [selectedClause, setSelectedClause] = useState('all');
+  const [selectedOrigin, setSelectedOrigin] = useState<OriginType | 'all'>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<ComplianceStatus | 'all'>('all');
   const [evidenceCoverageFilter, setEvidenceCoverageFilter] = useState<'all' | 'with_evidence' | 'missing_evidence'>('all');
   const [areaFilter, setAreaFilter] = useState<'all' | 'pv' | 'v'>('all');
   const [responsibleAreaFilter, setResponsibleAreaFilter] = useState('all');
-  const [sortBy, setSortBy] = useState<'row' | 'code' | 'evidences' | 'status'>('row');
+  const [sortBy, setSortBy] = useState<'row' | 'code' | 'evidences' | 'status' | 'priority'>('row');
+
+  // Target item when navigating from Summary to Audit Mode
+  const [auditModeTargetId, setAuditModeTargetId] = useState<string | null>(null);
 
   // Modals state
   const [selectedItemForModal, setSelectedItemForModal] = useState<AuditItem | null>(null);
   const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [previewEvidence, setPreviewEvidence] = useState<EvidenceLink | null>(null);
+
+  // Action item modal
+  const [isActionModalOpen, setIsActionModalOpen] = useState(false);
+  const [selectedReqForAction, setSelectedReqForAction] = useState<AuditItem | null>(null);
+  const [editingActionItem, setEditingActionItem] = useState<AuditActionItem | null>(null);
 
   // Toast notification
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -97,7 +113,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Sync to local storage on change
+  // Sync to local storage
   useEffect(() => {
     saveAuditItems(items, activeAuditKey, storageScope);
   }, [items, activeAuditKey, storageScope]);
@@ -106,105 +122,20 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     saveAuditRunState(storageScope, auditState);
   }, [auditState, storageScope]);
 
+  useEffect(() => {
+    saveStoredActionItems(storageScope, actionItems);
+  }, [actionItems, storageScope]);
+
   // Derived statistics
   const stats = useMemo(() => calculateStats(items), [items]);
 
-  // Chapters list
-  const chapters: string[] = useMemo(() => {
-    return Array.from(new Set(items.map((i) => i.chapter))).filter(
-      (ch): ch is string => Boolean(ch)
-    );
-  }, [items]);
-
+  // PCGC responsible areas
   const responsibleAreas = useMemo(() => {
     if (activeAuditKey !== 'pcgc') return [];
     return Array.from(new Set<string>(items.map((item) => item.question.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   }, [activeAuditKey, items]);
 
-  // Filtered & Sorted items
-  const filteredItems = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-
-    return items
-      .filter((item) => {
-        // Search query
-        if (q) {
-          const inCode = item.code.toLowerCase().includes(q);
-          const inReq = item.requirement.toLowerCase().includes(q);
-          const inQuestion = item.question.toLowerCase().includes(q);
-          const inDesc = item.description.toLowerCase().includes(q);
-          const inAudit = item.howToAudit.toLowerCase().includes(q);
-          const inFinding = (item.finding || '').toLowerCase().includes(q);
-          const inComment = (item.comment || '').toLowerCase().includes(q);
-          const inEvidences = (item.evidences || []).some(
-            (e) => e.title.toLowerCase().includes(q) || e.url.toLowerCase().includes(q) || (e.description || '').toLowerCase().includes(q)
-          );
-
-          if (!inCode && !inReq && !inQuestion && !inDesc && !inAudit && !inFinding && !inComment && !inEvidences) {
-            return false;
-          }
-        }
-
-        // Chapter filter
-        if (selectedChapter !== 'all' && item.chapter !== selectedChapter) {
-          return false;
-        }
-
-        // Evidence Type filter
-        if (selectedEvidenceType !== 'all') {
-          const hasType = (item.evidences || []).some((e) => e.type === selectedEvidenceType);
-          if (!hasType) return false;
-        }
-
-        // Status filter
-        if (selectedStatusFilter !== 'all' && item.status !== selectedStatusFilter) {
-          return false;
-        }
-
-        // Coverage filter
-        if (evidenceCoverageFilter === 'with_evidence' && (!item.evidences || item.evidences.length === 0)) {
-          return false;
-        }
-        if (evidenceCoverageFilter === 'missing_evidence' && item.evidences && item.evidences.length > 0) {
-          return false;
-        }
-
-        // PCGC se organiza por el responsable/área de cada criterio; ISO conserva PV/V.
-        if (activeAuditKey === 'pcgc') {
-          if (responsibleAreaFilter !== 'all' && item.question !== responsibleAreaFilter) return false;
-        } else {
-          if (areaFilter === 'pv' && !item.pv) return false;
-          if (areaFilter === 'v' && !item.v) return false;
-        }
-
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortBy === 'code') return a.code.localeCompare(b.code, undefined, { numeric: true });
-        if (sortBy === 'evidences') return (b.evidences?.length || 0) - (a.evidences?.length || 0);
-        if (sortBy === 'status') return a.status.localeCompare(b.status);
-        return a.rowNumber - b.rowNumber;
-      });
-  }, [
-    items,
-    searchQuery,
-    selectedChapter,
-    selectedEvidenceType,
-    selectedStatusFilter,
-    evidenceCoverageFilter,
-    areaFilter,
-    responsibleAreaFilter,
-    activeAuditKey,
-    sortBy,
-  ]);
-
-  // La vista de tarjetas es un recorrido visual completo y no hereda filtros de la matriz.
-  const cardItems = useMemo(
-    () => [...items].sort((a, b) => a.rowNumber - b.rowNumber),
-    [items],
-  );
-
-  // Handlers
+  // Handlers for Items
   const handleOpenEvidenceModal = (item: AuditItem) => {
     if (auditState.closed) return showToast('Esta auditoría está cerrada. Reabrila para hacer cambios.', 'info');
     setSelectedItemForModal(item);
@@ -220,7 +151,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
   const handleSaveItem = (updatedItem: AuditItem) => {
     if (auditState.closed) return showToast('Esta auditoría está cerrada. Reabrila para hacer cambios.', 'info');
     setItems((prev) => prev.map((it) => (it.id === updatedItem.id ? updatedItem : it)));
-    showToast(`Evidencias actualizadas para criterio ${updatedItem.code}`);
+    showToast(`Evidencias y datos actualizados para ${updatedItem.code}`);
   };
 
   const handleUpdateStatus = (itemId: string, status: ComplianceStatus) => {
@@ -231,19 +162,68 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     showToast(`Estado actualizado`);
   };
 
+  const handleSaveFinding = (itemId: string, finding: string) => {
+    if (auditState.closed) return showToast('Esta auditoría está cerrada.', 'info');
+    setItems((prev) =>
+      prev.map((it) => (it.id === itemId ? { ...it, finding, lastUpdated: new Date().toISOString().split('T')[0] } : it))
+    );
+    showToast('Hallazgo guardado');
+  };
+
   const handleToggleAuditClosed = () => {
     if (!auditState.closed) {
-      const confirmClose = window.confirm('¿Cerrar esta auditoría? Se bloquearán los cambios, pero podrás reabrirla cuando lo necesites.');
+      const confirmClose = window.confirm('¿Cerrar esta auditoría? Se bloquearán las ediciones para preservar el estado final.');
       if (!confirmClose) return;
       setAuditState({ closed: true, closedAt: new Date().toISOString() });
-      showToast('Auditoría cerrada. Podrás reabrirla cuando lo necesites.', 'info');
+      showToast('Auditoría cerrada.', 'info');
       return;
     }
     setAuditState({ closed: false });
     showToast('Auditoría reabierta para editar.');
   };
 
-  // Los cambios se guardan al instante y, tras una breve pausa, se respaldan de forma segura.
+  // Handlers for Action Items / Tasks
+  const handleOpenNewActionModal = (requirement?: AuditItem | null) => {
+    if (auditState.closed) return showToast('Esta auditoría está cerrada.', 'info');
+    setSelectedReqForAction(requirement || null);
+    setEditingActionItem(null);
+    setIsActionModalOpen(true);
+  };
+
+  const handleEditActionItem = (task: AuditActionItem) => {
+    if (auditState.closed) return showToast('Esta auditoría está cerrada.', 'info');
+    setEditingActionItem(task);
+    setIsActionModalOpen(true);
+  };
+
+  const handleSaveActionTask = (task: AuditActionItem) => {
+    setActionItems((prev) => {
+      const exists = prev.some((t) => t.id === task.id);
+      if (exists) {
+        return prev.map((t) => (t.id === task.id ? task : t));
+      }
+      return [task, ...prev];
+    });
+    showToast('Tarea guardada exitosamente.');
+  };
+
+  const handleDeleteActionTask = (taskId: string) => {
+    if (!window.confirm('¿Eliminar esta tarea pendiente?')) return;
+    setActionItems((prev) => prev.filter((t) => t.id !== taskId));
+    showToast('Tarea eliminada.');
+  };
+
+  const handleToggleTaskStatus = (taskId: string) => {
+    setActionItems((prev) =>
+      prev.map((t) =>
+        t.id === taskId
+          ? { ...t, status: t.status === 'completada' ? 'pendiente' : 'completada', updatedAt: new Date().toISOString().split('T')[0] }
+          : t
+      )
+    );
+  };
+
+  // Remote Sync debounce
   useEffect(() => {
     const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
     if (isLocal) {
@@ -256,7 +236,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
       const res = await pushAllToAppsScript(items, activeAuditKey, auditRun, auditState);
       if (!res.success) {
         setSaveState('error');
-        showToast('No se pudo guardar el cambio de forma segura.', 'error');
+        showToast('No se pudo respaldar en Apps Script. Verificá la conexión.', 'error');
       } else {
         setSaveState('saved');
       }
@@ -267,8 +247,8 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
 
   const handleResetFilters = () => {
     setSearchQuery('');
-    setSelectedChapter('all');
-    setSelectedEvidenceType('all');
+    setSelectedClause('all');
+    setSelectedOrigin('all');
     setSelectedStatusFilter('all');
     setEvidenceCoverageFilter('all');
     setAreaFilter('all');
@@ -276,301 +256,179 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     setSortBy('row');
   };
 
+  const handleNavigateToChecklistWithFilter = (filters?: { chapter?: string; status?: ComplianceStatus; coverage?: string; priorityOnly?: boolean }) => {
+    if (filters?.chapter) setSelectedClause(filters.chapter);
+    if (filters?.status) setSelectedStatusFilter(filters.status);
+    if (filters?.coverage) setEvidenceCoverageFilter(filters.coverage as any);
+    if (filters?.priorityOnly) setSortBy('priority');
+    setActiveIsoTab('checklist');
+  };
+
+  const handleNavigateToAuditMode = (itemId?: string) => {
+    if (itemId) setAuditModeTargetId(itemId);
+    setActiveIsoTab('audit');
+  };
+
+  const pendingTasksCount = actionItems.filter((t) => t.status !== 'completada').length;
+
   return (
-    <div className="flex flex-col h-screen bg-[#f6f8fc] text-slate-900 font-sans overflow-hidden">
+    <div className="flex flex-col h-screen bg-[#f8fafc] text-slate-900 font-sans overflow-hidden">
       {/* Toast notification */}
       {toast && (
         <div className="fixed bottom-10 right-6 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
           <div
-            className={`px-4 py-2.5 rounded shadow-lg text-xs font-semibold flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl shadow-xl text-xs font-bold flex items-center gap-2 border ${
               toast.type === 'success'
-                ? 'bg-[#1A1C1E] text-white border border-gray-700'
+                ? 'bg-slate-950 text-white border-slate-700'
                 : toast.type === 'error'
-                ? 'bg-red-600 text-white'
-                : 'bg-blue-600 text-white'
+                ? 'bg-rose-600 text-white border-rose-700'
+                : 'bg-blue-600 text-white border-blue-700'
             }`}
           >
-            {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-green-400" />}
-            {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-white" />}
+            {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+            {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-white shrink-0" />}
             <span>{toast.message}</span>
           </div>
         </div>
       )}
 
-      {/* 1. High Density Top Header (#1A1C1E) */}
-      <Header auditTitle={activeAudit.shortName} auditRunLabel={getAuditRunLabel(auditRun)} onChangeAudit={onChangeAudit} auditClosed={auditState.closed} saveState={saveState} onToggleAuditClosed={handleToggleAuditClosed} />
+      {/* 1. Sleek Top Header with Tabs */}
+      <Header
+        auditTitle={activeAudit.shortName}
+        auditRunLabel={getAuditRunLabel(auditRun)}
+        activeAuditKey={activeAuditKey}
+        activeTab={activeIsoTab}
+        onSelectTab={(tab) => {
+          setActiveIsoTab(tab);
+          if (tab === 'audit') setAuditModeTargetId(null);
+        }}
+        pendingTasksCount={pendingTasksCount}
+        onChangeAudit={onChangeAudit}
+        auditClosed={auditState.closed}
+        saveState={saveState}
+        onToggleAuditClosed={handleToggleAuditClosed}
+        onOpenReportModal={() => setIsReportModalOpen(true)}
+        onExportJSON={() => exportAuditDataToJSON(items, actionItems)}
+        onExportCSV={() => exportAuditDataToCSV(items)}
+      />
 
-      {/* 2. Main High Density Body Container (Sidebar + High-Density Content Area) */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* SIDEBAR: Categories, Evidence Types & Stats */}
-        {viewMode === 'table' && (
-        <aside className="w-64 sm:w-72 bg-white/95 border-r border-slate-200/80 flex flex-col shrink-0 overflow-y-auto">
-          {/* Quick Primary Actions */}
-          <div className="p-3 border-b border-gray-200 space-y-2">
-            <button
-              type="button"
-              onClick={() => setIsReportModalOpen(true)}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-colors"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Generar Dossier de Evidencias</span>
-            </button>
+      {/* 2. Main High-Density Workspace Body */}
+      {isIso ? (
+        /* ================= ISO 9001 REDESIGNED WORKSPACE ================= */
+        <main className="flex-1 flex overflow-hidden">
+          {activeIsoTab === 'summary' && (
+            <IsoSummaryView
+              items={items}
+              stats={stats}
+              actionItems={actionItems}
+              onNavigateToChecklist={handleNavigateToChecklistWithFilter}
+              onNavigateToAuditMode={handleNavigateToAuditMode}
+              onOpenEvidenceModal={handleOpenEvidenceModal}
+              onOpenActionItemModal={(req) => handleOpenNewActionModal(req)}
+            />
+          )}
 
-          </div>
+          {activeIsoTab === 'checklist' && (
+            <IsoChecklistView
+              items={items}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              selectedClause={selectedClause}
+              setSelectedClause={setSelectedClause}
+              selectedOrigin={selectedOrigin}
+              setSelectedOrigin={setSelectedOrigin}
+              selectedStatus={selectedStatusFilter}
+              setSelectedStatus={setSelectedStatusFilter}
+              selectedCoverage={evidenceCoverageFilter}
+              setSelectedCoverage={setEvidenceCoverageFilter}
+              selectedArea={areaFilter}
+              setSelectedArea={setAreaFilter}
+              sortBy={sortBy}
+              setSortBy={setSortBy}
+              viewMode={isoViewMode}
+              setViewMode={setIsoViewMode}
+              onResetFilters={handleResetFilters}
+              onOpenEvidenceModal={handleOpenEvidenceModal}
+              onQuickAddEvidence={handleQuickAddEvidence}
+              onUpdateStatus={handleUpdateStatus}
+              onPreviewEvidence={(ev) => setPreviewEvidence(ev)}
+              readOnly={auditState.closed}
+            />
+          )}
 
-          {/* Chapters Navigation */}
-          <div className="py-2">
-            <div className="px-3 pb-1.5 flex items-center justify-between">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                {activeAudit.shortName} · Categorías
-              </span>
-              <span className="text-[10px] font-mono text-gray-400">
-                {items.length} ítems
-              </span>
-            </div>
+          {activeIsoTab === 'audit' && (
+            <AuditMode
+              items={items}
+              initialItemId={auditModeTargetId}
+              onUpdateStatus={handleUpdateStatus}
+              onOpenEvidenceManager={handleOpenEvidenceModal}
+              onPreviewEvidence={(ev) => setPreviewEvidence(ev)}
+              onSaveFinding={handleSaveFinding}
+              onOpenActionItemModal={(req) => handleOpenNewActionModal(req)}
+              readOnly={auditState.closed}
+            />
+          )}
 
-            <div className="px-2 space-y-0.5">
-              {/* All Chapters */}
-              <button
-                type="button"
-                onClick={() => setSelectedChapter('all')}
-                className={`w-full text-left px-2.5 py-1.5 rounded text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                  selectedChapter === 'all'
-                    ? 'bg-blue-50 text-blue-700 font-bold border-l-2 border-blue-600 pl-2'
-                    : 'text-gray-700 hover:bg-gray-50 font-medium'
-                }`}
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <LayoutGrid className="w-3.5 h-3.5 text-gray-400" />
-                  <span className="truncate">Todos los Capítulos</span>
+          {activeIsoTab === 'tasks' && (
+            <IsoPendingTasksView
+              tasks={actionItems}
+              items={items}
+              onAddTask={() => handleOpenNewActionModal(null)}
+              onEditTask={handleEditActionItem}
+              onDeleteTask={handleDeleteActionTask}
+              onToggleTaskStatus={handleToggleTaskStatus}
+              onNavigateToRequirement={(reqId) => {
+                const req = items.find((i) => i.id === reqId);
+                if (req) {
+                  setSelectedItemForModal(req);
+                  setIsEvidenceModalOpen(true);
+                }
+              }}
+            />
+          )}
+        </main>
+      ) : (
+        /* ================= PCGC AUDIT WORKSPACE (PRESERVED) ================= */
+        <main className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex flex-col bg-white overflow-hidden">
+            {/* PCGC Control Toolbar */}
+            <div className="p-3 border-b border-gray-200 flex flex-wrap justify-between items-center bg-white z-10 gap-2 shrink-0">
+              <div className="flex items-center gap-2 flex-1 min-w-[240px] max-w-md">
+                <div className="relative w-full">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Buscar requisito o tema PCGC..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full text-xs pl-8 pr-6 py-1.5 rounded border border-gray-300 bg-gray-50 focus:bg-white focus:outline-none focus:border-violet-500 font-sans"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-bold"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-                <span className="text-[11px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.2 rounded">
-                  {items.length}
-                </span>
-              </button>
-
-              {/* Individual Chapters */}
-              {chapters.map((chap) => {
-                const chapItems = items.filter((i) => i.chapter === chap);
-                const withEv = chapItems.filter((i) => (i.evidences || []).length > 0).length;
-                const isSelected = selectedChapter === chap;
-                const Icon = CHAPTER_ICONS[chap] || BookOpen;
-
-                return (
-                  <button
-                    key={chap}
-                    type="button"
-                    onClick={() => setSelectedChapter(chap)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                      isSelected
-                        ? 'bg-blue-50 text-blue-700 font-bold border-l-2 border-blue-600 pl-2'
-                        : 'text-gray-700 hover:bg-gray-50 font-medium'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`} />
-                      <span className="truncate" title={chap}>{chap}</span>
-                    </div>
-                    <span className={`text-[10px] font-mono px-1 py-0.2 rounded shrink-0 ${
-                      withEv === chapItems.length ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {withEv}/{chapItems.length}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Evidence Types Filter */}
-          <div className="py-2 border-t border-gray-100">
-            <div className="px-3 pb-1.5">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                Tipos de Evidencia
-              </span>
-            </div>
-
-            <div className="px-2 space-y-0.5">
-              <button
-                type="button"
-                onClick={() => setSelectedEvidenceType('all')}
-                className={`w-full text-left px-2.5 py-1 rounded text-xs flex items-center justify-between cursor-pointer ${
-                  selectedEvidenceType === 'all'
-                    ? 'bg-gray-100 text-gray-900 font-bold'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <span>Todas ({stats.totalEvidencesCount})</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedEvidenceType('photo')}
-                className={`w-full text-left px-2.5 py-1 rounded text-xs flex items-center justify-between cursor-pointer ${
-                  selectedEvidenceType === 'photo'
-                    ? 'bg-blue-50 text-blue-700 font-bold'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Camera className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Fotos e Imágenes</span>
-                </div>
-                <span className="font-mono text-[11px] text-gray-400">{stats.evidenceTypeCounts.photo || 0}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedEvidenceType('pdf')}
-                className={`w-full text-left px-2.5 py-1 rounded text-xs flex items-center justify-between cursor-pointer ${
-                  selectedEvidenceType === 'pdf'
-                    ? 'bg-rose-50 text-rose-700 font-bold'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-red-600" />
-                  <span>PDFs y Documentos</span>
-                </div>
-                <span className="font-mono text-[11px] text-gray-400">{stats.evidenceTypeCounts.pdf || 0}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedEvidenceType('sheet')}
-                className={`w-full text-left px-2.5 py-1 rounded text-xs flex items-center justify-between cursor-pointer ${
-                  selectedEvidenceType === 'sheet'
-                    ? 'bg-emerald-50 text-emerald-700 font-bold'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-green-600" />
-                  <span>Sheets y Matrices</span>
-                </div>
-                <span className="font-mono text-[11px] text-gray-400">{stats.evidenceTypeCounts.sheet || 0}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedEvidenceType('sop')}
-                className={`w-full text-left px-2.5 py-1 rounded text-xs flex items-center justify-between cursor-pointer ${
-                  selectedEvidenceType === 'sop'
-                    ? 'bg-amber-50 text-amber-700 font-bold'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Workflow className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Procesos y SOPs</span>
-                </div>
-                <span className="font-mono text-[11px] text-gray-400">{stats.evidenceTypeCounts.sop || 0}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedEvidenceType('web')}
-                className={`w-full text-left px-2.5 py-1 rounded text-xs flex items-center justify-between cursor-pointer ${
-                  selectedEvidenceType === 'web'
-                    ? 'bg-blue-50 text-blue-700 font-bold'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Webs y Portales</span>
-                </div>
-                <span className="font-mono text-[11px] text-gray-400">{stats.evidenceTypeCounts.web || 0}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedEvidenceType('drive')}
-                className={`w-full text-left px-2.5 py-1 rounded text-xs flex items-center justify-between cursor-pointer ${
-                  selectedEvidenceType === 'drive'
-                    ? 'bg-indigo-50 text-indigo-700 font-bold'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <HardDrive className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Google Drive</span>
-                </div>
-                <span className="font-mono text-[11px] text-gray-400">{stats.evidenceTypeCounts.drive || 0}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Auditor Profile Box */}
-          <div className="p-3 bg-gray-50 border-t border-gray-200 mt-auto">
-            <div className="flex items-center gap-2 justify-between">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                  AUD
-                </div>
-                <div className="text-xs font-bold text-gray-900 truncate">Equipo de Calidad</div>
               </div>
-            </div>
-          </div>
-        </aside>
-        )}
 
-        {/* MAIN WORKSPACE SECTION */}
-        <main className="flex-1 flex flex-col bg-white overflow-hidden">
-          {/* HIGH DENSITY CONTROL BAR (Filters, Search, View Mode) */}
-          <div className="p-3 border-b border-gray-200 flex flex-wrap justify-between items-center bg-white z-10 gap-2 shrink-0">
-            {/* Search Box */}
-            <div className="flex items-center gap-2 flex-1 min-w-[240px] max-w-md">
-              <div className="relative w-full">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Buscar requisito, tema o evidencia..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full text-xs pl-8 pr-6 py-1.5 rounded border border-gray-300 bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-sans"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-bold"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            </div>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <select
+                  value={selectedStatusFilter}
+                  onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
+                  className="px-2 py-1 rounded border border-gray-300 bg-white font-medium text-gray-700 cursor-pointer text-xs outline-none"
+                >
+                  <option value="all">Estado: Todos ({items.length})</option>
+                  <option value="cumplida">✓ Cumple ({stats.compliantCount})</option>
+                  <option value="en_progreso">⏳ En Proceso ({stats.inProgressCount})</option>
+                  <option value="no_cumplida">✗ No Cumple ({stats.nonCompliantCount})</option>
+                  <option value="no_aplica">⊘ No Aplica ({stats.notApplicableCount})</option>
+                  <option value="pendiente">Pendiente ({stats.pendingCount})</option>
+                </select>
 
-            {/* Quick dropdown filters */}
-            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              {/* Status Filter */}
-              <select
-                value={selectedStatusFilter}
-                onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
-                className="px-2 py-1 rounded border border-gray-300 bg-white font-medium text-gray-700 cursor-pointer text-xs focus:border-blue-500 outline-none"
-              >
-                <option value="all">Estado: Todos ({items.length})</option>
-                <option value="cumplida">✓ Cumple ({stats.compliantCount})</option>
-                <option value="en_progreso">⏳ En Proceso ({stats.inProgressCount})</option>
-                <option value="no_cumplida">✗ No Cumple ({stats.nonCompliantCount})</option>
-                <option value="no_aplica">⊘ No Aplica ({stats.notApplicableCount})</option>
-                <option value="pendiente">Pendiente ({stats.pendingCount})</option>
-              </select>
-
-              {viewMode === 'table' && <>
-              {/* Evidence Coverage */}
-              <select
-                value={evidenceCoverageFilter}
-                onChange={(e) => setEvidenceCoverageFilter(e.target.value as any)}
-                className="px-2 py-1 rounded border border-gray-300 bg-white font-medium text-gray-700 cursor-pointer text-xs focus:border-blue-500 outline-none"
-              >
-                <option value="all">Evidencias: Todas</option>
-                <option value="with_evidence">✓ Con Evidencia ({stats.withEvidenceCount})</option>
-                <option value="missing_evidence">⚠️ Sin Evidencia ({stats.totalItems - stats.withEvidenceCount})</option>
-              </select>
-
-              {activeAuditKey === 'pcgc' ? (
                 <select
                   value={responsibleAreaFilter}
                   onChange={(e) => setResponsibleAreaFilter(e.target.value)}
@@ -579,265 +437,55 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
                   <option value="all">Responsable: Todos</option>
                   {responsibleAreas.map((area) => <option key={area} value={area}>{area}</option>)}
                 </select>
-              ) : (
-                <select
-                  value={areaFilter}
-                  onChange={(e) => setAreaFilter(e.target.value as any)}
-                  className="px-2 py-1 rounded border border-gray-300 bg-white font-medium text-gray-700 cursor-pointer text-xs focus:border-blue-500 outline-none"
-                >
-                  <option value="all">Área: PV y V</option>
-                  <option value="pv">Posventa (PV)</option>
-                  <option value="v">Ventas (V)</option>
-                </select>
-              )}
 
-              {/* Sort Order */}
-              <div className="flex items-center gap-1 bg-gray-50 border border-gray-300 rounded px-2 py-1 text-xs">
-                <ArrowUpDown className="w-3 h-3 text-gray-400" />
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as any)}
-                  className="bg-transparent text-gray-700 font-medium text-xs focus:outline-none cursor-pointer"
-                >
-                  <option value="row">Orden Sheet</option>
-                  <option value="code">Código</option>
-                  <option value="evidences">Más Evidencias</option>
-                  <option value="status">Estado</option>
-                </select>
-              </div>
-              </>}
-
-              {/* View Mode Toggle */}
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('audit')}
-                  title="Modo Auditoría: un criterio, sus evidencias y el resultado"
-                  className={`p-1 px-2 text-xs font-medium flex items-center gap-1 cursor-pointer ${
-                    viewMode === 'audit' ? 'bg-[#1A1C1E] text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <FileCheck2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Auditar</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('table')}
-                  title="Vista Tabla Alta Densidad"
-                  className={`p-1 px-2 text-xs font-medium flex items-center gap-1 cursor-pointer ${
-                    viewMode === 'table' ? 'bg-[#1A1C1E] text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <TableIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Matriz</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('cards')}
-                  title="Vista Tarjetas Compactas"
-                  className={`p-1 px-2 text-xs font-medium flex items-center gap-1 cursor-pointer ${
-                    viewMode === 'cards' ? 'bg-[#1A1C1E] text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Tarjetas</span>
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="p-1 px-2 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold cursor-pointer flex items-center gap-1"
-                title="Quitar todos los filtros"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>Quitar filtros</span>
-              </button>
-            </div>
-          </div>
-
-          {/* MAIN SCROLLABLE CONTENT (Table or Cards) */}
-          <div className={`flex-1 ${viewMode === 'audit' ? 'flex overflow-hidden' : 'overflow-y-auto bg-slate-50/60'}`}>
-            {viewMode === 'audit' ? (
-              <AuditMode
-                items={filteredItems}
-                onUpdateStatus={handleUpdateStatus}
-                onOpenEvidenceManager={handleOpenEvidenceModal}
-                onPreviewEvidence={setPreviewEvidence}
-                readOnly={auditState.closed}
-              />
-            ) : viewMode === 'cards' ? (
-              <div className="p-5 space-y-8">
-                {chapters.map((chapter) => {
-                  const chapterItems = cardItems.filter((item) => item.chapter === chapter);
-                  const ChapterIcon = CHAPTER_ICONS[chapter] || BookOpen;
-                  return (
-                    <section key={chapter}>
-                      <div className="mb-3 flex items-center gap-2 border-b border-slate-200/80 pb-2">
-                        <div className="grid h-8 w-8 place-items-center rounded-xl bg-blue-50 text-blue-700">
-                          <ChapterIcon className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <h2 className="text-sm font-bold text-slate-900">{chapter}</h2>
-                          <p className="text-[11px] text-slate-500">{chapterItems.length} criterios</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {chapterItems.map((item) => (
-                          <AuditItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenEvidenceModal={handleOpenEvidenceModal}
-                            onQuickAddEvidence={handleQuickAddEvidence}
-                            onUpdateStatus={handleUpdateStatus}
-                            onQuickPreviewEvidence={(ev) => setPreviewEvidence(ev)}
-                            readOnly={auditState.closed}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  );
-                })}
-              </div>
-            ) : filteredItems.length > 0 ? (
-              viewMode === 'table' ? (
-                /* HIGH DENSITY TABLE VIEW */
-                <div className="w-full">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="sticky top-0 bg-gray-50 border-b border-gray-200 z-10 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                      <tr>
-                        <th className="py-2.5 px-3 w-16">ID</th>
-                        <th className="py-2.5 px-3 min-w-[280px]">Requisito / Punto de Control</th>
-                        <th className="py-2.5 px-3 w-32">Estado</th>
-                        <th className="py-2.5 px-3 min-w-[220px]">Evidencias Disponibles</th>
-                        <th className="py-2.5 px-3 w-28 text-right">Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 text-xs bg-white">
-                      {filteredItems.map((item) => {
-                        const evidences = item.evidences || [];
-                        const statusCfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pendiente;
-
-                        return (
-                          <tr
-                            key={item.id}
-                            className="hover:bg-blue-50/50 transition-colors group"
-                          >
-                            {/* Column 1: ID */}
-                            <td className="py-2.5 px-3 align-top">
-                              <span className="font-mono font-bold text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded text-[11px]">
-                                {item.code}
-                              </span>
-                              <div className="text-[10px] text-gray-400 font-mono mt-1">
-                                #{item.rowNumber}
-                              </div>
-                            </td>
-
-                            {/* Column 2: Requirement & Details */}
-                            <td className="py-2.5 px-3 align-top">
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">
-                                  {item.section}
-                                </span>
-                                {item.pv && (
-                                  <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                                    PV
-                                  </span>
-                                )}
-                                {item.v && (
-                                  <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                                    V
-                                  </span>
-                                )}
-                              </div>
-                              <div className="font-semibold text-gray-900 text-xs leading-snug">
-                                {item.requirement}
-                              </div>
-                              {item.question && item.question !== item.requirement && (
-                                <div className="text-gray-500 text-[11px] mt-0.5 line-clamp-2">
-                                  {item.question}
-                                </div>
-                              )}
-                              {item.howToAudit && (
-                                <div className="text-[10px] text-blue-900 bg-blue-50/40 p-1 rounded mt-1.5 border border-blue-100/60 line-clamp-2">
-                                  <span className="font-bold">Muestreo:</span> {item.howToAudit}
-                                </div>
-                              )}
-                            </td>
-
-                            {/* Column 3: Status */}
-                            <td className="py-2.5 px-3 align-top">
-                              <select
-                                value={item.status}
-                                onChange={(e) => handleUpdateStatus(item.id, e.target.value as ComplianceStatus)}
-                                disabled={auditState.closed}
-                                aria-label="Cambiar estado"
-                                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border cursor-pointer focus:ring-1 focus:ring-blue-500 focus:outline-none ${statusCfg.pillClass}`}
-                              >
-                                <option value="cumplida">✓ Cumple</option>
-                                <option value="en_progreso">⏳ En Proceso</option>
-                                <option value="no_cumplida">✗ No Cumple</option>
-                                <option value="no_aplica">⊘ No Aplica</option>
-                                <option value="pendiente">Pendiente</option>
-                              </select>
-                            </td>
-
-                            {/* Column 4: Evidence Icons */}
-                            <td className="py-2.5 px-3 align-top">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {evidences.map((ev) => (
-                                  <EvidenceButton
-                                    key={ev.id}
-                                    evidence={ev}
-                                    denseSquare={true}
-                                    onClick={() => {
-                                      if (ev.type === 'photo' || ev.type === 'pdf') {
-                                        setPreviewEvidence(ev);
-                                      } else if (ev.url) {
-                                        window.open(ev.url, '_blank', 'noopener,noreferrer');
-                                      }
-                                    }}
-                                  />
-                                ))}
-
-                                {/* Quick Add Link Icon Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleQuickAddEvidence(item)}
-                                  title="Subir evidencia"
-                                  className="w-7 h-7 sm:w-8 sm:h-8 rounded border border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-500 hover:bg-blue-50/50 transition-colors cursor-pointer"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                              {evidences.length === 0 && (
-                                <span className="text-[10px] text-amber-600 font-medium flex items-center gap-1 mt-1">
-                                  <Clock className="w-2.5 h-2.5" /> Sin evidencias
-                                </span>
-                              )}
-                            </td>
-
-                            {/* Column 5: Action */}
-                            <td className="py-2.5 px-3 text-right align-top">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEvidenceModal(item)}
-                                className="text-blue-600 font-bold hover:underline cursor-pointer inline-flex items-center gap-1 text-xs"
-                              >
-                                <Edit className="w-3 h-3" />
-                                <span>Detalles</span>
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setPcgcViewMode('table')}
+                    className={`p-1 px-2 text-xs font-medium cursor-pointer ${pcgcViewMode === 'table' ? 'bg-[#1A1C1E] text-white' : 'bg-white text-gray-600'}`}
+                  >
+                    Matriz
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPcgcViewMode('cards')}
+                    className={`p-1 px-2 text-xs font-medium cursor-pointer ${pcgcViewMode === 'cards' ? 'bg-[#1A1C1E] text-white' : 'bg-white text-gray-600'}`}
+                  >
+                    Tarjetas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPcgcViewMode('audit')}
+                    className={`p-1 px-2 text-xs font-medium cursor-pointer ${pcgcViewMode === 'audit' ? 'bg-[#1A1C1E] text-white' : 'bg-white text-gray-600'}`}
+                  >
+                    Auditar
+                  </button>
                 </div>
-              ) : (
-                /* HIGH DENSITY CARDS VIEW */
-                <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {filteredItems.map((item) => (
+
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="p-1 px-2 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold cursor-pointer flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Limpiar</span>
+                </button>
+              </div>
+            </div>
+
+            {/* PCGC Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {pcgcViewMode === 'audit' ? (
+                <AuditMode
+                  items={items}
+                  onUpdateStatus={handleUpdateStatus}
+                  onOpenEvidenceManager={handleOpenEvidenceModal}
+                  onPreviewEvidence={(ev) => setPreviewEvidence(ev)}
+                  readOnly={auditState.closed}
+                />
+              ) : pcgcViewMode === 'cards' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {items.map((item) => (
                     <AuditItemCard
                       key={item.id}
                       item={item}
@@ -849,49 +497,76 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
                     />
                   ))}
                 </div>
-              )
-            ) : (
-              <div className="p-12 text-center max-w-md mx-auto">
-                <Filter className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                <h3 className="text-sm font-bold text-gray-800 mb-1">
-                  No se encontraron criterios de auditoría
-                </h3>
-                <p className="text-xs text-gray-500 mb-3">
-                  No hay elementos que coincidan con la búsqueda o filtros actuales.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleResetFilters}
-                  className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer inline-flex items-center gap-1"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Restablecer Filtros</span>
-                </button>
-              </div>
-            )}
+              ) : (
+                <div className="w-full">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="sticky top-0 bg-gray-50 border-b border-gray-200 z-10 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                      <tr>
+                        <th className="py-2.5 px-3 w-16">ID</th>
+                        <th className="py-2.5 px-3 min-w-[280px]">Requisito / Punto de Control</th>
+                        <th className="py-2.5 px-3 w-32">Estado</th>
+                        <th className="py-2.5 px-3 min-w-[220px]">Evidencias</th>
+                        <th className="py-2.5 px-3 w-28 text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 text-xs bg-white">
+                      {items.map((item) => (
+                        <tr key={item.id} className="hover:bg-violet-50/40 transition-colors">
+                          <td className="py-2.5 px-3 align-top font-mono font-bold text-gray-900">
+                            {item.code}
+                          </td>
+                          <td className="py-2.5 px-3 align-top">
+                            <div className="font-semibold text-gray-900">{item.requirement}</div>
+                            {item.question && <div className="text-gray-500 text-[11px]">{item.question}</div>}
+                          </td>
+                          <td className="py-2.5 px-3 align-top">
+                            <select
+                              value={item.status}
+                              onChange={(e) => handleUpdateStatus(item.id, e.target.value as ComplianceStatus)}
+                              disabled={auditState.closed}
+                              className="text-[10px] font-bold uppercase px-2 py-1 rounded border"
+                            >
+                              <option value="cumplida">✓ Cumple</option>
+                              <option value="en_progreso">⏳ En Proceso</option>
+                              <option value="no_cumplida">✗ No Cumple</option>
+                              <option value="no_aplica">⊘ No Aplica</option>
+                              <option value="pendiente">Pendiente</option>
+                            </select>
+                          </td>
+                          <td className="py-2.5 px-3 align-top">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {(item.evidences || []).map((ev) => (
+                                <EvidenceButton key={ev.id} evidence={ev} denseSquare onClick={() => setPreviewEvidence(ev)} />
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => handleQuickAddEvidence(item)}
+                                className="w-7 h-7 rounded border border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:text-violet-600"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-right align-top">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEvidenceModal(item)}
+                              className="text-violet-600 font-bold hover:underline inline-flex items-center gap-1 text-xs"
+                            >
+                              <Edit className="w-3 h-3" />
+                              <span>Detalles</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </main>
-      </div>
-
-      {/* 3. High Density Bottom Status Bar (Footer) */}
-      <footer className="h-8 bg-white border-t border-gray-200 flex items-center justify-between px-4 text-[10px] text-gray-500 shrink-0 select-none">
-        <div className="flex items-center gap-3 truncate">
-          <span className="flex items-center gap-1.5 font-medium text-gray-700">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Sistema Oficial de Auditoría de Calidad</span>
-          </span>
-          <span className="text-gray-300">|</span>
-          <span className="hidden md:inline text-gray-500">
-            Normativa VAG (Audi • VW • VW CV • ŠKODA • SEAT)
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <span className="font-bold text-gray-800">
-            {viewMode === 'cards' ? items.length : filteredItems.length} / {items.length} Criterios
-          </span>
-        </div>
-      </footer>
+      )}
 
       {/* Modals */}
       <EvidenceManagerModal
@@ -901,6 +576,15 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
         onSaveItem={handleSaveItem}
         auditKey={activeAuditKey}
         auditRun={auditRun}
+      />
+
+      <ActionItemModal
+        isOpen={isActionModalOpen}
+        onClose={() => setIsActionModalOpen(false)}
+        onSaveTask={handleSaveActionTask}
+        items={items}
+        defaultRequirement={selectedReqForAction}
+        editingTask={editingActionItem}
       />
 
       <AuditReportModal
