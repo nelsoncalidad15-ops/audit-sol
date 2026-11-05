@@ -20,7 +20,7 @@ import {
   exportAuditDataToCSV,
   type AuditRunState
 } from './services/storageService';
-import { pushAllToAppsScript, fetchAllFromAppsScript } from './services/googleSyncService';
+import { pushAllToAppsScript, fetchAllFromAppsScript, uploadEvidenceToAppsScript } from './services/googleSyncService';
 import { 
   getAuditDefinition, 
   getAuditRunLabel, 
@@ -28,7 +28,6 @@ import {
   type AuditRunContext 
 } from './data/auditConfig';
 import { Header, type IsoActiveTab } from './components/Header';
-import { IsoSummaryView } from './components/iso/IsoSummaryView';
 import { IsoChecklistView } from './components/iso/IsoChecklistView';
 import { IsoPendingTasksView } from './components/iso/IsoPendingTasksView';
 import { ActionItemModal } from './components/iso/ActionItemModal';
@@ -78,15 +77,17 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
   const isDirtyRef = useRef(false);
 
   // ISO Navigation tabs
-  const [activeIsoTab, setActiveIsoTab] = useState<IsoActiveTab>('summary');
+  const [activeIsoTab, setActiveIsoTab] = useState<IsoActiveTab>('checklist');
 
   // PCGC View Mode: table or cards or audit
   const [pcgcViewMode, setPcgcViewMode] = useState<'table' | 'cards' | 'audit'>('table');
   const [isoViewMode, setIsoViewMode] = useState<'table' | 'cards'>('table');
 
   // ISO Checklist Filters state
+  const [uploadsInProgress, setUploadsInProgress] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClause, setSelectedClause] = useState('all');
+  const [selectedCodeGroup, setSelectedCodeGroup] = useState('all');
   const [selectedOrigin, setSelectedOrigin] = useState<OriginType | 'all'>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<ComplianceStatus | 'all'>('all');
   const [evidenceCoverageFilter, setEvidenceCoverageFilter] = useState<'all' | 'with_evidence' | 'missing_evidence'>('all');
@@ -158,6 +159,32 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     showToast(`Evidencias y datos actualizados para ${updatedItem.code}`);
   };
 
+  const handleQuickComment = (id: string, comment: string) => {
+    if (auditState.closed) return;
+    isDirtyRef.current = true;
+    setItems(prev => prev.map(it => it.id === id ? { ...it, comment, lastUpdated: new Date().toISOString() } : it));
+    showToast('Comentario guardado');
+  };
+
+  const handleQuickRemove = (id: string, evidenceId: string) => {
+    if (auditState.closed) return;
+    isDirtyRef.current = true;
+    setItems(prev => prev.map(it => it.id === id ? { ...it, evidences: it.evidences.filter(ev => ev.id !== evidenceId), lastUpdated: new Date().toISOString() } : it));
+    showToast('Evidencia quitada del punto');
+  };
+
+  const handleQuickUpload = async (item: AuditItem, file: File) => {
+    if (auditState.closed) throw new Error('La auditoría está cerrada.');
+    const type: EvidenceType = file.type.startsWith('image/') ? 'photo' : file.type === 'application/pdf' ? 'pdf' : /\.(xlsx?|csv)$/i.test(file.name) ? 'sheet' : 'other';
+    const evidence: EvidenceLink = { id: crypto.randomUUID(), title: file.name, type, url: '', addedAt: new Date().toISOString(), verified: false, status: 'pending_review' };
+    setUploadsInProgress(count => count + 1);
+    try {
+      const uploaded = await uploadEvidenceToAppsScript(item, evidence, file, activeAuditKey, auditRun);
+      isDirtyRef.current = true;
+      setItems(prev => prev.map(it => it.id === item.id ? { ...it, evidences: [...it.evidences, { ...uploaded, verified: false, status: 'linked' }], lastUpdated: new Date().toISOString() } : it));
+    } finally { setUploadsInProgress(count => count - 1); }
+  };
+
   const handleUpdateStatus = (itemId: string, status: ComplianceStatus) => {
     if (auditState.closed) return showToast('Esta auditoría está cerrada. Reabrila para hacer cambios.', 'info');
     isDirtyRef.current = true;
@@ -177,6 +204,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
   };
 
   const handleToggleAuditClosed = () => {
+    if (uploadsInProgress) return showToast('Esperá a que terminen de subir los archivos.', 'info');
     if (!auditState.closed) {
       const confirmClose = window.confirm('¿Cerrar esta auditoría? Se bloquearán las ediciones para preservar el estado final.');
       if (!confirmClose) return;
@@ -318,6 +346,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
   const handleResetFilters = () => {
     setSearchQuery('');
     setSelectedClause('all');
+    setSelectedCodeGroup('all');
     setSelectedOrigin('all');
     setSelectedStatusFilter('all');
     setEvidenceCoverageFilter('all');
@@ -373,7 +402,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
           if (tab === 'audit') setAuditModeTargetId(null);
         }}
         pendingTasksCount={pendingTasksCount}
-        onChangeAudit={onChangeAudit}
+        onChangeAudit={() => uploadsInProgress ? showToast('Esperá a que terminen de subir los archivos.', 'info') : onChangeAudit()}
         auditClosed={auditState.closed}
         saveState={saveState}
         onManualSync={handleManualSync}
@@ -387,17 +416,6 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
       {isIso ? (
         /* ================= ISO 9001 REDESIGNED WORKSPACE ================= */
         <main className="flex-1 flex overflow-hidden">
-          {activeIsoTab === 'summary' && (
-            <IsoSummaryView
-              items={items}
-              stats={stats}
-              actionItems={actionItems}
-              onNavigateToChecklist={handleNavigateToChecklistWithFilter}
-              onNavigateToAuditMode={handleNavigateToAuditMode}
-              onOpenEvidenceModal={handleOpenEvidenceModal}
-              onOpenActionItemModal={(req) => handleOpenNewActionModal(req)}
-            />
-          )}
 
           {activeIsoTab === 'checklist' && (
             <IsoChecklistView
@@ -405,6 +423,11 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               selectedClause={selectedClause}
+              onUpload={handleQuickUpload}
+              onSaveComment={handleQuickComment}
+              onRemoveEvidence={handleQuickRemove}
+              selectedCodeGroup={selectedCodeGroup}
+              setSelectedCodeGroup={setSelectedCodeGroup}
               setSelectedClause={setSelectedClause}
               selectedOrigin={selectedOrigin}
               setSelectedOrigin={setSelectedOrigin}
@@ -640,14 +663,15 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
       )}
 
       {/* Modals */}
-      <EvidenceManagerModal
+      {isEvidenceModalOpen && selectedItemForModal && <EvidenceManagerModal
+        key={selectedItemForModal.id}
         item={selectedItemForModal}
         isOpen={isEvidenceModalOpen}
         onClose={() => setIsEvidenceModalOpen(false)}
         onSaveItem={handleSaveItem}
         auditKey={activeAuditKey}
         auditRun={auditRun}
-      />
+      />}
 
       <ActionItemModal
         isOpen={isActionModalOpen}

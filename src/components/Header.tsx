@@ -17,7 +17,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 
-export type IsoActiveTab = 'summary' | 'checklist' | 'audit' | 'tasks';
+export type IsoActiveTab = 'checklist' | 'audit' | 'tasks';
 
 interface HeaderProps {
   auditTitle: string;
@@ -83,18 +83,6 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Center: Main Navigation Tabs for ISO 9001 (Desktop) */}
         {isIso && (
           <nav className="hidden md:flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
-            <button
-              type="button"
-              onClick={() => onSelectTab('summary')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'summary'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>Resumen</span>
-            </button>
 
             <button
               type="button"
@@ -247,16 +235,6 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Mobile Tab Navigation Bar */}
       {isIso && (
         <div className="md:hidden flex items-center justify-around border-t border-slate-800/80 bg-slate-950 px-2 py-1.5 text-xs">
-          <button
-            type="button"
-            onClick={() => onSelectTab('summary')}
-            className={`flex items-center gap-1 py-1 px-2 rounded font-bold ${
-              activeTab === 'summary' ? 'text-blue-400 bg-slate-900' : 'text-slate-400'
-            }`}
-          >
-            <LayoutDashboard className="w-3.5 h-3.5" />
-            <span>Resumen</span>
-          </button>
 
           <button
             type="button"

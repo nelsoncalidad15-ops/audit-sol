@@ -6,9 +6,9 @@ import {
   EvidenceLink,
   OriginType 
 } from '../../types/audit';
-import { AuditItemCard } from '../AuditItemCard';
-import { EvidenceButton } from '../EvidenceTypeBadge';
-import { StatusBadge, STATUS_CONFIG } from '../common/StatusBadge';
+import { RequirementDetails } from './RequirementDetails';
+import { QuickItemActions, QuickItemActionsProps } from './QuickItemActions';
+import { STATUS_CONFIG } from '../common/StatusBadge';
 import { OriginBadge } from '../common/OriginBadge';
 import { IsoClauseBadge } from '../common/IsoClauseBadge';
 import { EmptyState } from '../common/EmptyState';
@@ -36,6 +36,8 @@ interface IsoChecklistViewProps {
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   selectedClause: string;
+  selectedCodeGroup: string;
+  setSelectedCodeGroup: (group: string) => void;
   setSelectedClause: (c: string) => void;
   selectedOrigin: OriginType | 'all';
   setSelectedOrigin: (o: OriginType | 'all') => void;
@@ -54,6 +56,9 @@ interface IsoChecklistViewProps {
   onQuickAddEvidence: (item: AuditItem) => void;
   onUpdateStatus: (itemId: string, status: ComplianceStatus) => void;
   onPreviewEvidence: (ev: EvidenceLink) => void;
+  onUpload: QuickItemActionsProps['onUpload'];
+  onSaveComment: QuickItemActionsProps['onSaveComment'];
+  onRemoveEvidence: QuickItemActionsProps['onRemoveEvidence'];
   readOnly?: boolean;
 }
 
@@ -62,6 +67,8 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
   searchQuery,
   setSearchQuery,
   selectedClause,
+  selectedCodeGroup,
+  setSelectedCodeGroup,
   setSelectedClause,
   selectedOrigin,
   setSelectedOrigin,
@@ -80,6 +87,9 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
   onQuickAddEvidence,
   onUpdateStatus,
   onPreviewEvidence,
+  onUpload,
+  onSaveComment,
+  onRemoveEvidence,
   readOnly = false,
 }) => {
   const [isSecondaryFilterOpen, setIsSecondaryFilterOpen] = useState(false);
@@ -99,15 +109,22 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
           const inVerify = item.whatToVerify?.toLowerCase().includes(q);
           const inShow = item.whatToShow?.toLowerCase().includes(q);
           const inAudit = item.howToAudit?.toLowerCase().includes(q);
+          const inComment = (item.comment || '').toLowerCase().includes(q);
+          const inExtra = [item.howToCheck, item.internalNotes].some(text => text?.toLowerCase().includes(q));
           const inFinding = (item.finding || '').toLowerCase().includes(q);
           const inResponsible = (item.responsible || '').toLowerCase().includes(q);
           const inEvidences = (item.evidences || []).some(
             (e) => e.title.toLowerCase().includes(q) || (e.description || '').toLowerCase().includes(q)
           );
 
-          if (!inCode && !inReq && !inQuestion && !inDesc && !inVerify && !inShow && !inAudit && !inFinding && !inResponsible && !inEvidences) {
+          if (!inComment && !inExtra && !inCode && !inReq && !inQuestion && !inDesc && !inVerify && !inShow && !inAudit && !inFinding && !inResponsible && !inEvidences) {
             return false;
           }
+        }
+
+        // Match the complete first code segment (1 includes 1.2.3, never 10.2.3).
+        if (selectedCodeGroup !== 'all' && item.code.trim().split('.')[0] !== selectedCodeGroup) {
+          return false;
         }
 
         // Clause filter
@@ -156,6 +173,7 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
     items,
     searchQuery,
     selectedClause,
+    selectedCodeGroup,
     selectedOrigin,
     selectedStatus,
     selectedCoverage,
@@ -166,6 +184,7 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
   const hasActiveFilters = 
     searchQuery !== '' || 
     selectedClause !== 'all' || 
+    selectedCodeGroup !== 'all' ||
     selectedOrigin !== 'all' || 
     selectedStatus !== 'all' || 
     selectedCoverage !== 'all' || 
@@ -201,16 +220,17 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
 
           {/* Quick Dropdown Filters */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            {/* Clause filter */}
             <select
-              value={selectedClause}
-              onChange={(e) => setSelectedClause(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-medium text-slate-700 cursor-pointer text-xs focus:border-blue-500 outline-none max-w-[190px]"
+              aria-label="Filtrar por grupo de código"
+              value={selectedCodeGroup}
+              onChange={(e) => setSelectedCodeGroup(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-medium text-slate-700 cursor-pointer text-xs focus:border-blue-500 outline-none max-w-[230px]"
             >
-              <option value="all">Cláusula: Todas ({items.length})</option>
-              {ISO_CLAUSES_LIST.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
+              <option value="all">Código: Todos</option>
+              <option value="1">1 · Gestión y control de documentos</option>
+              <option value="2">2 · Área e instalaciones</option>
+              <option value="3">3 · Posventa</option>
+              <option value="4">4 · Procesos de venta</option>
             </select>
 
             {/* Status filter */}
@@ -256,9 +276,11 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
             {/* More filters button */}
             <button
               type="button"
+              aria-expanded={isSecondaryFilterOpen}
+              aria-label="Más filtros"
               onClick={() => setIsSecondaryFilterOpen(!isSecondaryFilterOpen)}
               className={`p-1.5 px-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                isSecondaryFilterOpen || selectedOrigin !== 'all' || selectedCoverage !== 'all' || selectedArea !== 'all' || sortBy !== 'row'
+                isSecondaryFilterOpen || selectedClause !== 'all' || selectedOrigin !== 'all' || selectedCoverage !== 'all' || selectedArea !== 'all' || sortBy !== 'row'
                   ? 'border-blue-300 bg-blue-50 text-blue-700'
                   : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
               }`}
@@ -284,7 +306,19 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
 
         {/* Secondary Collapsible Filters */}
         {isSecondaryFilterOpen && (
-          <div className="pt-3 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs animate-in fade-in duration-150">
+          <div className="pt-3 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs animate-in fade-in duration-150">
+            {/* Clause filter */}
+            <select
+              value={selectedClause}
+              onChange={(e) => setSelectedClause(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-medium text-slate-700 cursor-pointer text-xs focus:border-blue-500 outline-none max-w-[190px]"
+            >
+              <option value="all">Cláusula: Todas ({items.length})</option>
+              {ISO_CLAUSES_LIST.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+
             {/* Origin Type Filter */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-600 mb-1">Tipo de Origen:</label>
@@ -359,16 +393,13 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
                   <thead className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
                     <tr>
                       <th className="py-3 px-3.5 w-20">Código</th>
-                      <th className="py-3 px-3.5 min-w-[320px]">Requisito y Qué se verifica</th>
+                      <th className="py-3 px-3.5 min-w-[320px]">Requisito</th>
                       <th className="py-3 px-3.5 w-32">Estado</th>
-                      <th className="py-3 px-3.5 min-w-[220px]">Evidencias</th>
-                      <th className="py-3 px-3.5 w-28 text-right">Acción</th>
+                      <th className="py-3 px-3.5 min-w-[260px]">Evidencias y comentarios</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {filteredItems.map((item) => {
-                      const evidences = item.evidences || [];
-                      const validEvs = evidences.filter((e) => Boolean(e.url));
                       const statusCfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pendiente;
 
                       return (
@@ -409,18 +440,7 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
                               {item.requirement}
                             </div>
 
-                            {item.whatToVerify && (
-                              <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                                <span className="font-semibold text-slate-700">Verificar: </span>
-                                {item.whatToVerify}
-                              </p>
-                            )}
-
-                            {item.whatToShow && (
-                              <p className="text-[10px] text-indigo-900 bg-indigo-50/60 px-2 py-1 rounded border border-indigo-100 mt-1.5 line-clamp-2">
-                                <strong className="font-semibold">Mostrar:</strong> {item.whatToShow}
-                              </p>
-                            )}
+                            <RequirementDetails item={item} />
 
                             {item.finding && (
                               <p className="text-[10px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-100 mt-1.5">
@@ -446,51 +466,8 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
                             </select>
                           </td>
 
-                          {/* Col 4: Evidences */}
                           <td className="py-3 px-3.5 align-top">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {validEvs.map((ev) => (
-                                <EvidenceButton
-                                  key={ev.id}
-                                  evidence={ev}
-                                  denseSquare={true}
-                                  onClick={() => {
-                                    if (ev.type === 'photo' || ev.type === 'pdf') {
-                                      onPreviewEvidence(ev);
-                                    } else if (ev.url) {
-                                      window.open(ev.url, '_blank', 'noopener,noreferrer');
-                                    }
-                                  }}
-                                />
-                              ))}
-
-                              <button
-                                type="button"
-                                onClick={() => onQuickAddEvidence(item)}
-                                title="Subir evidencia"
-                                className="w-7 h-7 rounded border border-dashed border-slate-300 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50/50 transition-colors cursor-pointer"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-
-                            {validEvs.length === 0 && (
-                              <span className="text-[10px] text-amber-600 font-medium flex items-center gap-1 mt-1">
-                                <Clock className="w-2.5 h-2.5" /> Sin evidencias
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Col 5: Actions */}
-                          <td className="py-3 px-3.5 text-right align-top">
-                            <button
-                              type="button"
-                              onClick={() => onOpenEvidenceModal(item)}
-                              className="text-blue-600 hover:text-blue-800 font-bold hover:underline cursor-pointer inline-flex items-center gap-1 text-xs"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                              <span>Detalle</span>
-                            </button>
+                            <QuickItemActions item={item} readOnly={readOnly} onUpload={onUpload} onSaveComment={onSaveComment} onRemoveEvidence={onRemoveEvidence} onPreviewEvidence={onPreviewEvidence} onManage={onOpenEvidenceModal} />
                           </td>
                         </tr>
                       );
@@ -503,15 +480,18 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
             /* CARDS GRID VIEW */
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {filteredItems.map((item) => (
-                <AuditItemCard
-                  key={item.id}
-                  item={item}
-                  onOpenEvidenceModal={onOpenEvidenceModal}
-                  onQuickAddEvidence={onQuickAddEvidence}
-                  onUpdateStatus={onUpdateStatus}
-                  onQuickPreviewEvidence={onPreviewEvidence}
-                  readOnly={readOnly}
-                />
+                <article key={item.id} className="rounded-xl border border-slate-200 bg-white p-4 space-y-3 min-w-0">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-slate-600">{item.code}</span>
+                    <select aria-label={`Estado de ${item.code}`} value={item.status} disabled={readOnly} onChange={e => onUpdateStatus(item.id, e.target.value as ComplianceStatus)} className="border border-slate-200 rounded-lg p-2 text-xs">
+                      <option value="pendiente">Pendiente</option><option value="cumplida">Cumple</option><option value="en_progreso">En proceso</option><option value="no_cumplida">No cumple</option><option value="no_aplica">No aplica</option>
+                    </select>
+                  </div>
+                  <h3 className="text-sm font-semibold text-slate-900">{item.requirement}</h3>
+                  <RequirementDetails item={item} />
+                  {item.finding && <p className="text-xs text-rose-700 whitespace-pre-wrap">Hallazgo: {item.finding}</p>}
+                  <QuickItemActions item={item} readOnly={readOnly} onUpload={onUpload} onSaveComment={onSaveComment} onRemoveEvidence={onRemoveEvidence} onPreviewEvidence={onPreviewEvidence} onManage={onOpenEvidenceModal} />
+                </article>
               ))}
             </div>
           )
