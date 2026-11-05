@@ -60,5 +60,6 @@ test('audit requires authorization and forwards the server token', async (t) => 
   const response = await audit({ request: request('audit', { action: 'load_all', token: 'forged' }, cookie), env: config });
   assert.equal(response.status, 200);
   assert.equal(forwarded.token, config.AUDIT_API_TOKEN);
+  assert.equal((await audit({ request: request('audit', { action: 'delete_evidence' }, cookie), env: config })).status, 200);
   assert.equal((await audit({ request: request('audit', { action: 'unknown' }, cookie), env: config })).status, 400);
 });

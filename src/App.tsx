@@ -20,7 +20,7 @@ import {
   exportAuditDataToCSV,
   type AuditRunState
 } from './services/storageService';
-import { pushAllToAppsScript, fetchAllFromAppsScript, uploadEvidenceToAppsScript } from './services/googleSyncService';
+import { pushAllToAppsScript, fetchAllFromAppsScript, uploadEvidenceToAppsScript, deleteEvidenceFromDrive } from './services/googleSyncService';
 import { 
   getAuditDefinition, 
   getAuditRunLabel, 
@@ -166,11 +166,22 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     showToast('Comentario guardado');
   };
 
-  const handleQuickRemove = (id: string, evidenceId: string) => {
+  const handleQuickRemove = async (id: string, evidenceId: string) => {
     if (auditState.closed) return;
+    const itemTarget = items.find(it => it.id === id);
+    const evTarget = itemTarget?.evidences?.find(ev => ev.id === evidenceId);
+
+    if (evTarget?.url && (evTarget.url.includes('drive.google.com') || evTarget.type === 'drive' || evTarget.type === 'photo' || evTarget.type === 'pdf')) {
+      try {
+        await deleteEvidenceFromDrive(evTarget.url, activeAuditKey, auditRun, true);
+      } catch (err) {
+        console.warn('No se pudo mover a borrados en Drive:', err);
+      }
+    }
+
     isDirtyRef.current = true;
     setItems(prev => prev.map(it => it.id === id ? { ...it, evidences: it.evidences.filter(ev => ev.id !== evidenceId), lastUpdated: new Date().toISOString() } : it));
-    showToast('Evidencia quitada del punto');
+    showToast('Evidencia quitada y archivada en Drive (Borrados)');
   };
 
   const handleQuickUpload = async (item: AuditItem, file: File) => {

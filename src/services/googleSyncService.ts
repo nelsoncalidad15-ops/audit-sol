@@ -36,6 +36,26 @@ async function callSecureAuditApi(payload: Record<string, unknown>) {
   return result;
 }
 
+export async function deleteEvidenceFromDrive(
+  fileUrl: string,
+  auditKey: AuditKey = 'iso9001',
+  auditRun?: AuditRunContext,
+  moveToTrashFolder = true
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const res = await callSecureAuditApi({
+      action: 'delete_evidence',
+      auditKey,
+      auditRun,
+      fileUrl,
+      moveToTrashFolder,
+    });
+    return { success: res.success ?? true, message: res.message };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'No se pudo eliminar de Drive' };
+  }
+}
+
 export async function uploadEvidenceToAppsScript(
   item: AuditItem,
   evidence: Pick<EvidenceLink, 'id' | 'type' | 'title' | 'description' | 'addedAt'>,
@@ -79,8 +99,8 @@ export async function pushAllToAppsScript(
       auditKey,
       auditRun,
       auditState,
-      items: items.map(({ id, code, chapter, section, requirement, pv, v, status, finding, evidences }) => ({
-        id, code, chapter, section, requirement, pv, v, status, finding, evidences,
+      items: items.map(({ id, code, chapter, section, requirement, pv, v, status, finding, comment, responsible, evidences }) => ({
+        id, code, chapter, section, requirement, pv, v, status, finding, comment, responsible, evidences,
       })),
     });
     return {

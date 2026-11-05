@@ -6,13 +6,14 @@ import {
   EvidenceLink,
   OriginType 
 } from '../../types/audit';
-import { RequirementDetails } from './RequirementDetails';
 import { QuickItemActions, QuickItemActionsProps } from './QuickItemActions';
 import { STATUS_CONFIG } from '../common/StatusBadge';
 import { OriginBadge } from '../common/OriginBadge';
 import { IsoClauseBadge } from '../common/IsoClauseBadge';
 import { EmptyState } from '../common/EmptyState';
 import { ISO_CLAUSES_LIST, ORIGIN_TYPES_CONFIG } from '../../data/isoNormativeMapping';
+import { isMandatoryItem, isMarketExempt, getMarketExemption, MARKET_EXEMPTION_LABELS } from '../../data/auditRules';
+import { getLastBrandAuditReference } from '../../data/lastBrandAuditReference';
 import { 
   Search, 
   Filter, 
@@ -401,11 +402,21 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {filteredItems.map((item) => {
                       const statusCfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pendiente;
+                      const isMandatory = isMandatoryItem(item);
+                      const isExempt = isMarketExempt(item);
+                      const exemptionType = getMarketExemption(item);
+                      const brandRef = getLastBrandAuditReference(item);
+
+                      const rowBg = isMandatory
+                        ? 'bg-amber-50/50 hover:bg-amber-100/60 border-l-4 border-l-amber-500'
+                        : isExempt
+                        ? 'bg-purple-50/45 hover:bg-purple-100/60 border-l-4 border-l-purple-500'
+                        : 'hover:bg-blue-50/30';
 
                       return (
                         <tr
                           key={item.id}
-                          className="hover:bg-blue-50/30 transition-colors group"
+                          className={`${rowBg} transition-colors group`}
                         >
                           {/* Col 1: Code & Row */}
                           <td className="py-3 px-3.5 align-top">
@@ -436,11 +447,29 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
                               )}
                             </div>
 
-                            <div className="font-bold text-slate-900 text-xs leading-snug">
+                            <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                              {isMandatory && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 border border-amber-600 shadow-2xs">
+                                  ★ MH · Mandatorio
+                                </span>
+                              )}
+                              {isExempt && exemptionType && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 shadow-2xs">
+                                  {MARKET_EXEMPTION_LABELS[exemptionType].short}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className={`text-xs leading-snug ${isMandatory ? 'font-black text-slate-950 text-[13px]' : 'font-bold text-slate-900'}`}>
                               {item.requirement}
                             </div>
 
-                            <RequirementDetails item={item} />
+                            {brandRef && brandRef.note && (
+                              <div className="mt-1.5 p-1.5 rounded-lg bg-slate-100/80 border border-slate-200 text-[10px] text-slate-700">
+                                <span className="font-bold text-slate-900">Auditoría Salta (Ref):</span> {brandRef.note}
+                              </div>
+                            )}
+
 
                             {item.finding && (
                               <p className="text-[10px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-100 mt-1.5">
@@ -479,8 +508,32 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
           ) : (
             /* CARDS GRID VIEW */
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filteredItems.map((item) => (
-                <article key={item.id} className="rounded-xl border border-slate-200 bg-white p-4 space-y-3 min-w-0">
+              {filteredItems.map((item) => {
+                const isMandatory = isMandatoryItem(item);
+                const isExempt = isMarketExempt(item);
+                const exemptionType = getMarketExemption(item);
+                const brandRef = getLastBrandAuditReference(item);
+
+                const cardBorder = isMandatory
+                  ? 'border-2 border-amber-500 bg-amber-50/20 shadow-xs'
+                  : isExempt
+                  ? 'border-2 border-purple-400 bg-purple-50/30'
+                  : 'border border-slate-200 bg-white';
+
+                return (
+                <article key={item.id} className={`rounded-xl ${cardBorder} p-4 space-y-3 min-w-0`}>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {isMandatory && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 border border-amber-600">
+                        ★ MH · Mandatorio
+                      </span>
+                    )}
+                    {isExempt && exemptionType && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 shadow-2xs">
+                        {MARKET_EXEMPTION_LABELS[exemptionType].short}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex justify-between items-center gap-2">
                     <span className="font-mono text-xs font-bold text-slate-600">{item.code}</span>
                     <select aria-label={`Estado de ${item.code}`} value={item.status} disabled={readOnly} onChange={e => onUpdateStatus(item.id, e.target.value as ComplianceStatus)} className="border border-slate-200 rounded-lg p-2 text-xs">
@@ -488,11 +541,16 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
                     </select>
                   </div>
                   <h3 className="text-sm font-semibold text-slate-900">{item.requirement}</h3>
-                  <RequirementDetails item={item} />
                   {item.finding && <p className="text-xs text-rose-700 whitespace-pre-wrap">Hallazgo: {item.finding}</p>}
+                  {brandRef && brandRef.note && (
+                    <div className="p-2 rounded-lg bg-slate-100 border border-slate-200 text-[11px] text-slate-700">
+                      <span className="font-bold text-slate-900">Auditoría Salta:</span> {brandRef.note}
+                    </div>
+                  )}
                   <QuickItemActions item={item} readOnly={readOnly} onUpload={onUpload} onSaveComment={onSaveComment} onRemoveEvidence={onRemoveEvidence} onPreviewEvidence={onPreviewEvidence} onManage={onOpenEvidenceModal} />
                 </article>
-              ))}
+                );
+              })}
             </div>
           )
         ) : (

@@ -49,6 +49,10 @@ function doPost(e) {
       return saveAllAuditData_(request, audit, auditRun);
     }
 
+    if (request.action === 'delete_evidence') {
+      return deleteEvidenceFile_(request, audit, auditRun);
+    }
+
     return json_({ success: false, error: 'Acción no reconocida: ' + request.action });
   } catch (error) {
     return json_({ success: false, error: String(error) });
@@ -79,12 +83,26 @@ function loadAllAuditData_(request, audit, auditRun) {
     });
   }
 
-  const rows = evaluation.getRange(2, 1, lastRow - 1, 12).getValues();
+  const rows = evaluation.getRange(2, 1, lastRow - 1, Math.max(12, evaluation.getLastColumn())).getValues();
   const items = rows.map(function(row) {
     var evidences = [];
-    if (row[9]) {
+    // Compatible con formato anterior (12 cols: col 9 es evidences) y nuevo (13 cols: col 8 es comment, col 10 es evidences)
+    var commentVal = '';
+    var evidenceColIdx = 9;
+    var lastUpdatedIdx = 10;
+    var responsibleIdx = 11;
+
+    if (row.length >= 13) {
+      // Formato nuevo con columna de comentarios
+      commentVal = String(row[8] || '').trim();
+      evidenceColIdx = 10;
+      lastUpdatedIdx = 11;
+      responsibleIdx = 12;
+    }
+
+    if (row[evidenceColIdx]) {
       try {
-        evidences = typeof row[9] === 'string' ? JSON.parse(row[9]) : row[9];
+        evidences = typeof row[evidenceColIdx] === 'string' ? JSON.parse(row[evidenceColIdx]) : row[evidenceColIdx];
       } catch (err) {
         evidences = [];
       }
@@ -98,9 +116,10 @@ function loadAllAuditData_(request, audit, auditRun) {
       v: String(row[5] || '').toUpperCase() === 'X',
       status: normalizeStatus_(row[6]),
       finding: String(row[7] || '').trim(),
+      comment: commentVal,
       evidences: Array.isArray(evidences) ? evidences : [],
-      lastUpdated: String(row[10] || '').trim(),
-      responsible: String(row[11] || '').trim()
+      lastUpdated: String(row[lastUpdatedIdx] || '').trim(),
+      responsible: String(row[responsibleIdx] || '').trim()
     };
   });
 
@@ -140,12 +159,12 @@ function saveAllAuditData_(request, audit, auditRun) {
   const evidenceSheet = getEvidenceSheet_(auditRun.sheetPrefix + '_EVIDENCIAS');
 
   evaluation.clearContents();
-  evaluation.getRange(1, 1, 1, 12).setValues([[
+  evaluation.getRange(1, 1, 1, 13).setValues([[
     'CÓDIGO', 'CAPÍTULO', 'SECCIÓN', 'REQUERIMIENTO', 'PV', 'V',
-    'ESTADO', 'HALLAZGO', 'TOTAL EVIDENCIAS', 'EVIDENCIAS (JSON)',
+    'ESTADO', 'HALLAZGO', 'COMENTARIOS', 'TOTAL EVIDENCIAS', 'EVIDENCIAS (JSON)',
     'ÚLTIMA ACTUALIZACIÓN', 'AUDITOR'
   ]]);
-  formatHeader_(evaluation.getRange(1, 1, 1, 12));
+  formatHeader_(evaluation.getRange(1, 1, 1, 13));
 
   evidenceSheet.clearContents();
   evidenceSheet.getRange(1, 1, 1, 9).setValues([[
@@ -184,6 +203,7 @@ function saveAllAuditData_(request, audit, auditRun) {
       item.v ? 'X' : '',
       status,
       item.finding || '',
+      item.comment || '',
       evidences.length,
       JSON.stringify(evidences),
       dateText,
@@ -192,8 +212,8 @@ function saveAllAuditData_(request, audit, auditRun) {
   });
 
   if (rows.length) {
-    evaluation.getRange(2, 1, rows.length, 12).setValues(rows);
-    evaluation.autoResizeColumns(1, 12);
+    evaluation.getRange(2, 1, rows.length, 13).setValues(rows);
+    evaluation.autoResizeColumns(1, 13);
     evaluation.setFrozenRows(1);
   }
 
@@ -274,6 +294,58 @@ function uploadEvidence_(request, audit, auditRun) {
       fileSize: Math.round(driveFile.getSize() / 1024) + ' KB'
     }
   });
+}
+
+function deleteEvidenceFile_(request, audit, auditRun) {
+  const fileUrl = String(request.fileUrl || '').trim();
+  const fileId = extractDriveFileId_(fileUrl || request.fileId);
+  const moveToTrashFolder = request.moveToTrashFolder !== false; // por defecto mueve a papelera organizada
+
+  if (!fileId) {
+    return json_({ success: false, error: 'No se encontró un ID de archivo de Google Drive válido.' });
+  }
+
+  try {
+    const file = DriveApp.getFileById(fileId);
+
+    if (moveToTrashFolder) {
+      // Mover a carpeta "Borrados / Papelera" dentro de la estructura de la auditoría
+      const root = getAuditRootFolder_(request.driveFolderId, audit.driveFolder, auditRun);
+      const trashFolder = getOrCreateFolder_('Borrados', root);
+      
+      // Mover el archivo a la carpeta de Borrados
+      file.moveTo(trashFolder);
+      return json_({
+        success: true,
+        message: 'Archivo movido a la carpeta de Borrados en Google Drive.',
+        movedToTrashFolder: true
+      });
+    } else {
+      // Mandar a papelera de Google Drive (Drive Trash)
+      file.setTrashed(true);
+      return json_({
+        success: true,
+        message: 'Archivo enviado a la papelera de Google Drive.',
+        trashed: true
+      });
+    }
+  } catch (err) {
+    return json_({ success: false, error: 'No se pudo eliminar el archivo de Drive: ' + String(err) });
+  }
+}
+
+function extractDriveFileId_(urlOrId) {
+  if (!urlOrId) return '';
+  const str = String(urlOrId).trim();
+  // Si ya es un ID simple
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(str)) return str;
+  // Si es URL con /d/{id}/
+  const matchD = str.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchD) return matchD[1];
+  // Si es URL con ?id={id}
+  const matchId = str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchId) return matchId[1];
+  return '';
 }
 
 function getOrCreateFolder_(name, parent) {

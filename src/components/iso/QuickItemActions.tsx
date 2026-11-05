@@ -60,7 +60,7 @@ export function QuickItemActions({ item, readOnly, onUpload, onSaveComment, onRe
           <button type="button" disabled={readOnly} aria-label={`Quitar ${ev.title}`} onClick={() => setRemoving(ev.id)} className="p-1 text-slate-500 hover:text-rose-700 disabled:opacity-50"><X size={14} /></button>
         </div>
         {ev.description && <p className="whitespace-pre-wrap break-words mt-1">{ev.description}</p>}
-        {removing === ev.id && <div className="mt-2 space-y-2"><p>¿Quitar del punto? El archivo se conserva en Drive.</p><button type="button" className={buttonClass} disabled={readOnly} onClick={() => { onRemoveEvidence(item.id, ev.id); setRemoving(null); }}>Quitar</button> <button type="button" className={buttonClass} onClick={() => setRemoving(null)}>Cancelar</button></div>}
+        {removing === ev.id && <div className="mt-2 space-y-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-900"><p className="text-xs">¿Quitar del punto y mover a la carpeta de Borrados en Drive?</p><div className="flex gap-2"><button type="button" className={buttonClass} disabled={readOnly} onClick={() => { onRemoveEvidence(item.id, ev.id); setRemoving(null); }}>Quitar y archivar</button><button type="button" className={buttonClass} onClick={() => setRemoving(null)}>Cancelar</button></div></div>}
       </li>)}</ul>
     </details>}
     <button type="button" disabled={readOnly || !!progress} onClick={() => onManage(item)} className="text-xs text-blue-700 hover:underline disabled:opacity-50">Enlaces y más opciones</button>

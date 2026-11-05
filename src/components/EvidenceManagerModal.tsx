@@ -6,7 +6,7 @@ import {
   ComplianceStatus,
   EvidenceStatus
 } from '../types/audit';
-import { uploadEvidenceToAppsScript } from '../services/googleSyncService';
+import { uploadEvidenceToAppsScript, deleteEvidenceFromDrive } from '../services/googleSyncService';
 import type { AuditKey, AuditRunContext } from '../data/auditConfig';
 import { EVIDENCE_CONFIG } from './EvidenceTypeBadge';
 import { OriginBadge } from './common/OriginBadge';
@@ -158,12 +158,34 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
     }
   };
 
-  // Delete evidence with confirmation
-  const handleDeleteEvidence = (evidenceId: string) => {
-    if (!window.confirm('¿Quitar este vínculo de evidencia del requisito? El archivo en Drive permanecerá seguro.')) {
-      return;
+  // Delete evidence with confirmation and Drive cleanup
+  const handleDeleteEvidence = async (evidence: EvidenceLink) => {
+    const isDriveFile = Boolean(evidence.url && (evidence.url.includes('drive.google.com') || evidence.type === 'drive' || evidence.type === 'photo' || evidence.type === 'pdf' || evidence.type === 'sheet'));
+    
+    let deleteFromDrive = false;
+    if (isDriveFile) {
+      deleteFromDrive = window.confirm(
+        `¿Eliminar "${evidence.title}"?\n\nAceptar: Se quita del punto y se mueve a la carpeta de BORRADOS en Google Drive para que en Drive solo queden archivos vigentes.\n\nCancelar: No hacer cambios.`
+      );
+      if (!deleteFromDrive) return;
+    } else {
+      if (!window.confirm(`¿Quitar este vínculo "${evidence.title}" del requisito?`)) return;
     }
-    const updatedEvidences = (formData.evidences || []).filter((e) => e.id !== evidenceId);
+
+    if (isDriveFile && evidence.url) {
+      setIsSaving(true);
+      setSaveMessage('Moviendo archivo a la carpeta de Borrados en Drive...');
+      try {
+        await deleteEvidenceFromDrive(evidence.url, auditKey, auditRun, true);
+      } catch (err) {
+        console.warn('Error al mover a borrados en Drive:', err);
+      } finally {
+        setIsSaving(false);
+        setSaveMessage('');
+      }
+    }
+
+    const updatedEvidences = (formData.evidences || []).filter((e) => e.id !== evidence.id);
     const updatedItem = {
       ...formData,
       evidences: updatedEvidences,
@@ -666,7 +688,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
 
                         <button
                           type="button"
-                          onClick={() => handleDeleteEvidence(ev.id)}
+                          onClick={() => void handleDeleteEvidence(ev)}
                           title="Quitar vínculo"
                           className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
                         >
