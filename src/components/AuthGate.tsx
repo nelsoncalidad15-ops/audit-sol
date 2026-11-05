@@ -11,7 +11,7 @@ export const AuthGate: React.FC<React.PropsWithChildren> = ({ children }) => {
 
   useEffect(() => {
     if (isLocal) return;
-    fetch('/.netlify/functions/auth', { credentials: 'same-origin' })
+    fetch('/api/auth', { credentials: 'same-origin' })
       .then((response) => response.json())
       .then((data) => setIsAuthenticated(Boolean(data.authenticated)))
       .catch(() => setError('No se pudo verificar el acceso.'))
@@ -23,7 +23,7 @@ export const AuthGate: React.FC<React.PropsWithChildren> = ({ children }) => {
     setError('');
     setIsSubmitting(true);
     try {
-      const response = await fetch('/.netlify/functions/auth', {
+      const response = await fetch('/api/auth', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },

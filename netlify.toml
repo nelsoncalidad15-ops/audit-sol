@@ -5,6 +5,17 @@
 [functions]
   directory = "netlify/functions"
 
+# Compatibility while the existing deployment is migrated to Cloudflare.
+[[redirects]]
+  from = "/api/auth"
+  to = "/.netlify/functions/auth"
+  status = 200
+
+[[redirects]]
+  from = "/api/audit"
+  to = "/.netlify/functions/audit"
+  status = 200
+
 [[redirects]]
   from = "/iso-9001"
   to = "/index.html"

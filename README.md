@@ -1,24 +1,35 @@
-# Portal de Auditoría de Calidad
+# Portal de Auditor?a de Calidad
 
-Aplicación privada para consultar la matriz de auditoría, cargar evidencias y guardar el historial en Google Drive y Google Sheets.
+Web React publicada en Cloudflare Workers, con acceso por contrase?a y datos en Google Drive y Sheets.
 
-## Puesta en marcha segura
+## Publicar desde GitHub
 
-1. En el Google Sheet, abre **Extensiones → Apps Script** y reemplaza el contenido por [`apps-script/Code.gs`](apps-script/Code.gs).
-2. En **Project Settings → Script properties**, crea estas dos propiedades:
-   - `AUDIT_API_TOKEN`: un valor largo, aleatorio y privado.
-   - `DRIVE_ROOT_FOLDER_ID`: el ID de la carpeta privada de Drive donde guardar las evidencias.
-3. Implementa una nueva versión como **Aplicación web**, ejecutada como tu cuenta. Copia la URL `/exec` de esa implementación.
-4. En Netlify, conecta este repositorio y agrega como variables de entorno:
-   - `APPS_SCRIPT_URL`: la URL `/exec` del paso anterior.
-   - `AUDIT_API_TOKEN`: exactamente el mismo valor del paso 2.
-5. En Netlify agrega `PORTAL_PASSWORD`: la única contraseña que usará el equipo para ingresar.
-6. Comparte la carpeta raíz de Drive solamente con las personas autorizadas. Así podrán abrir los archivos que carguen o consulten.
+1. En Cloudflare, abre **Workers & Pages ? audit-sol ? Settings ? Builds** y selecciona `nelsoncalidad15-ops/audit-sol`.
+2. Configura la rama `main`, el comando de compilaci?n `npm run build` y el comando de implementaci?n `npx wrangler deploy`. El archivo `wrangler.toml` define `dist` como carpeta de archivos est?ticos y `server/worker.mjs` como servidor.
+3. Despu?s del primer despliegue del Worker con c?digo, en **Settings ? Variables and Secrets de runtime**, agrega como secretos de producci?n:
+   - `APPS_SCRIPT_URL`: URL `/exec` de la implementaci?n actual de Apps Script.
+   - `AUDIT_API_TOKEN`: mismo token configurado en las propiedades del Script.
+   - `PORTAL_PASSWORD`: contrase?a del equipo.
+4. Vuelve a desplegar despu?s de configurar los secretos. No los agregues al repositorio ni uses el prefijo `VITE_`.
+5. Comprueba el ingreso, `/iso-9001`, `/pcgc`, la carga de datos y el guardado de una evidencia en la URL de Cloudflare.
+6. Una vez comprobado, det?n la publicaci?n autom?tica de Netlify y retira all? el dominio personalizado, si existe. Configura ese dominio en Cloudflare antes de compartirlo.
 
-Netlify usa `npm run build` y publica `dist` automáticamente mediante [`netlify.toml`](netlify.toml).
+Cada actualizaci?n enviada a `main` genera una nueva publicaci?n. No es necesario cambiar Apps Script al migrar desde Netlify: reutiliza su implementaci?n y sus valores actuales. Configura secretos de preview solo si esas versiones deben acceder a los datos reales.
 
-## Seguridad
+## Configuraci?n inicial de Google
 
-La web no contiene la URL de Apps Script, el token, el ID de Drive ni la contraseña. El acceso crea una sesión privada de 12 horas; recién entonces una función de Netlify reenvía cada guardado al Script con el token secreto. El Script rechaza cualquier petición sin ese token y no entrega datos por `GET`.
+Si todav?a no est? configurado, copia `apps-script/Code.gs` al proyecto vinculado al Google Sheet. Define `AUDIT_API_TOKEN` y `DRIVE_ROOT_FOLDER_ID` en las propiedades del Script y publica una aplicaci?n web ejecutada como tu cuenta. Comparte la carpeta de Drive ?nicamente con las personas autorizadas.
 
-Después de actualizar `Code.gs`, publica una nueva implementación de Apps Script. La URL anterior no debe considerarse protegida.
+## Funcionamiento
+
+Las funciones de `functions/api/` verifican la contrase?a y una cookie de sesi?n firmada con duraci?n de 12 horas. El servidor reenv?a al Script las operaciones autorizadas, agregando el token secreto. La contrase?a y el token no forman parte del JavaScript del navegador.
+
+`wrangler.toml` configura Workers y la compatibilidad Node necesaria para la firma criptogr?fica. Las rutas `/api/*` ejecutan el servidor; el resto se entrega como archivos est?ticos con resoluci?n SPA.
+
+## Verificaci?n local
+
+- `npm run build`: compila la interfaz.
+- `node --test tests/cloudflare.test.mjs`: comprueba acceso y autorizaci?n de la API.
+- Para probar con Cloudflare localmente: `npx wrangler dev`, con los secretos en `.dev.vars` (ignorado por Git).
+
+El servidor Vite por s? solo no ejecuta las funciones de Cloudflare.

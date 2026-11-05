@@ -17,7 +17,7 @@ export interface LoadResult {
 }
 
 async function callSecureAuditApi(payload: Record<string, unknown>) {
-  const response = await fetch('/.netlify/functions/audit', {
+  const response = await fetch('/api/audit', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -28,7 +28,7 @@ async function callSecureAuditApi(payload: Record<string, unknown>) {
   try {
     result = raw ? JSON.parse(raw) : {};
   } catch {
-    // A missing Netlify function can return an HTML 404 page instead of JSON.
+    // A missing API endpoint can return an HTML 404 page instead of JSON.
   }
   if (!response.ok || !result.success) {
     throw new Error(result.error || 'El servicio de auditoría no está disponible. Esperá unos segundos y reintentá.');
