@@ -33,3 +33,12 @@ Las funciones de `functions/api/` verifican la contrase?a y una cookie de sesi?n
 - Para probar con Cloudflare localmente: `npx wrangler dev`, con los secretos en `.dev.vars` (ignorado por Git).
 
 El servidor Vite por s? solo no ejecuta las funciones de Cloudflare.
+
+## Documentos para la auditoría
+
+- Cada punto muestra sus documentos con acceso directo y descarga para archivos de Drive.
+- **Agregar evidencia** permite subir un archivo (hasta 4 MB), pegar un enlace o vincular un documento ya cargado en otro punto de la misma auditoría.
+- Usá un nombre reconocible (por ejemplo, `PR-07 · Procedimiento de compras`), clase y revisión para encontrarlo después.
+- El checklist y el Modo Auditor buscan por código, nombre del documento y revisión. En el celular, el checklist comienza en tarjetas.
+- **Qué pide este punto** contiene solamente la explicación del requisito. Los documentos se gestionan por separado.
+- Quitar un vínculo lo retira únicamente del punto: conserva el archivo en Drive y los demás vínculos. Cada punto mantiene su propia verificación.

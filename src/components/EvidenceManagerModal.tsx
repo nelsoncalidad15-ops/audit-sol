@@ -1,4 +1,5 @@
-import React, { useRef, useState } from 'react';
+import { documentKinds, safeDocumentUrl } from './DocumentList';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   AuditItem, 
   EvidenceLink, 
@@ -6,7 +7,7 @@ import {
   ComplianceStatus,
   EvidenceStatus
 } from '../types/audit';
-import { uploadEvidenceToAppsScript, deleteEvidenceFromDrive } from '../services/googleSyncService';
+import { uploadEvidenceToAppsScript } from '../services/googleSyncService';
 import type { AuditKey, AuditRunContext } from '../data/auditConfig';
 import { EVIDENCE_CONFIG } from './EvidenceTypeBadge';
 import { OriginBadge } from './common/OriginBadge';
@@ -32,10 +33,11 @@ import {
 } from 'lucide-react';
 
 interface EvidenceManagerModalProps {
-  item: AuditItem | null;
+  item: AuditItem;
   isOpen: boolean;
   onClose: () => void;
   onSaveItem: (updatedItem: AuditItem) => void;
+  allItems: AuditItem[];
   auditKey?: AuditKey;
   auditRun?: AuditRunContext;
 }
@@ -45,16 +47,39 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   isOpen,
   onClose,
   onSaveItem,
+  allItems,
   auditKey = 'iso9001',
   auditRun,
 }) => {
-  if (!isOpen || !item) return null;
 
   const [formData, setFormData] = useState<AuditItem>({ ...item });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => previous?.focus();
+  }, []);
 
   // States
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [documentTitle, setDocumentTitle] = useState('');
+  const [documentKind, setDocumentKind] = useState<NonNullable<EvidenceLink['documentKind']>>('other');
+  const [revision, setRevision] = useState('');
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [editKind, setEditKind] = useState<NonNullable<EvidenceLink['documentKind']>>('other');
+  const [editRevision, setEditRevision] = useState('');
+  const library = Array.from(new Map<string, EvidenceLink>(allItems.flatMap(source => source.evidences.filter(ev => safeDocumentUrl(ev.url)).map(ev => [ev.url, ev] as const))).values())
+    .filter(ev => !formData.evidences.some(existing => existing.url === ev.url))
+    .filter(ev => [ev.title, ev.description].some(text => (text || '').toLowerCase().includes(librarySearch.toLowerCase().trim())));
+  function reuseDocument(evidence: EvidenceLink) {
+    const updated = { ...formData, evidences: [...formData.evidences, { ...evidence, id: crypto.randomUUID(), verified: false, status: 'linked' as const, verifiedAt: undefined, verifiedBy: undefined }], lastUpdated: new Date().toISOString() };
+    setFormData(updated);
+    onSaveItem(updated);
+  }
+
   const [saveMessage, setSaveMessage] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -91,7 +116,8 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
     const evidence: EvidenceLink = {
       id: `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       type,
-      title: file.name,
+      title: documentTitle.trim() || file.name,
+      documentKind, revision: revision.trim(),
       url: '',
       addedAt: new Date().toISOString().split('T')[0],
       verified: false,
@@ -106,11 +132,13 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
       const uploaded = await uploadEvidenceToAppsScript(item, evidence, file, key, auditRun);
       const updatedItem: AuditItem = {
         ...formData,
-        evidences: [...(formData.evidences || []), { ...uploaded, verified: false, status: 'linked' }],
+        evidences: [...(formData.evidences || []), { ...uploaded, title: evidence.title, documentKind, revision: revision.trim(), verified: false, status: 'linked' }],
         lastUpdated: new Date().toISOString().split('T')[0],
       };
       setFormData(updatedItem);
       onSaveItem(updatedItem);
+      setPendingFile(null);
+      setDocumentTitle('');
     } catch (error: any) {
       setErrorMsg(error.message || 'No se pudo subir el archivo.');
     } finally {
@@ -131,6 +159,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
       const evidence: EvidenceLink = {
         id: `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         type: linkType,
+        documentKind, revision: revision.trim(),
         title: linkTitle.trim() || new URL(url).hostname,
         url,
         description: linkNotes.trim(),
@@ -158,39 +187,10 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
     }
   };
 
-  // Delete evidence with confirmation and Drive cleanup
+  // Unlink only: a document may be used by other requirements or audits.
   const handleDeleteEvidence = async (evidence: EvidenceLink) => {
-    const isDriveFile = Boolean(evidence.url && (evidence.url.includes('drive.google.com') || evidence.type === 'drive' || evidence.type === 'photo' || evidence.type === 'pdf' || evidence.type === 'sheet'));
-    
-    let deleteFromDrive = false;
-    if (isDriveFile) {
-      deleteFromDrive = window.confirm(
-        `¿Eliminar "${evidence.title}"?\n\nAceptar: Se quita del punto y se mueve a la carpeta de BORRADOS en Google Drive para que en Drive solo queden archivos vigentes.\n\nCancelar: No hacer cambios.`
-      );
-      if (!deleteFromDrive) return;
-    } else {
-      if (!window.confirm(`¿Quitar este vínculo "${evidence.title}" del requisito?`)) return;
-    }
-
-    if (isDriveFile && evidence.url) {
-      setIsSaving(true);
-      setSaveMessage('Moviendo archivo a la carpeta de Borrados en Drive...');
-      try {
-        await deleteEvidenceFromDrive(evidence.url, auditKey, auditRun, true);
-      } catch (err) {
-        console.warn('Error al mover a borrados en Drive:', err);
-      } finally {
-        setIsSaving(false);
-        setSaveMessage('');
-      }
-    }
-
-    const updatedEvidences = (formData.evidences || []).filter((e) => e.id !== evidence.id);
-    const updatedItem = {
-      ...formData,
-      evidences: updatedEvidences,
-      lastUpdated: new Date().toISOString().split('T')[0],
-    };
+    if (!window.confirm(`¿Quitar "${evidence.title}" de este punto? El archivo seguirá en Drive y en los otros puntos donde esté vinculado.`)) return;
+    const updatedItem = { ...formData, evidences: formData.evidences.filter(ev => ev.id !== evidence.id), lastUpdated: new Date().toISOString() };
     setFormData(updatedItem);
     onSaveItem(updatedItem);
   };
@@ -223,6 +223,8 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   // Start Edit
   const handleStartEdit = (evidence: EvidenceLink) => {
     setEditingEvidenceId(evidence.id);
+    setEditKind(evidence.documentKind || (evidence.type === 'sop' ? 'procedure' : 'other'));
+    setEditRevision(evidence.revision || '');
     setEditType(evidence.type);
     setEditTitle(evidence.title);
     setEditUrl(evidence.url || '');
@@ -236,12 +238,14 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   const handleSaveEdit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!editingEvidenceId) return;
+    if (editUrl.trim() && !safeDocumentUrl(editUrl.trim())) { setErrorMsg('Ingresá un enlace http o https válido.'); return; }
 
     const updatedEvidences = (formData.evidences || []).map((ev) => {
       if (ev.id === editingEvidenceId) {
         return {
           ...ev,
           type: editType,
+          documentKind: editKind, revision: editRevision.trim(),
           title: editTitle.trim() || ev.title,
           url: editUrl.trim() || ev.url,
           description: editDescription.trim(),
@@ -278,7 +282,15 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
   const validEvidences = (formData.evidences || []).filter((e) => Boolean(e.url && e.url.trim().length > 0));
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
+    <div ref={dialogRef} tabIndex={-1} onKeyDown={event => {
+      if (event.key === 'Escape' && !isSaving) onClose();
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from<HTMLElement>(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]') || []).filter(el => el.offsetParent !== null && !el.closest('fieldset:disabled'));
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (!first) { event.preventDefault(); return; }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }} role="dialog" aria-modal="true" aria-label={`Documentos del punto ${item.code}`} className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
       <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
         {/* Modal Header */}
         <div className="px-6 py-4 bg-slate-950 text-white flex items-center justify-between shrink-0">
@@ -297,6 +309,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
           </div>
           <button
             type="button"
+            disabled={isSaving}
             onClick={onClose}
             aria-label="Cerrar modal"
             className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
@@ -306,59 +319,13 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-5">
+        <fieldset disabled={isSaving} className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-5 min-w-0">
           {errorMsg && (
             <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{errorMsg}</span>
             </div>
           )}
-
-          {/* Normative Reference & Official Content */}
-          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3 text-xs">
-            <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-200/60">
-              {item.originType && <OriginBadge originType={item.originType} size="sm" fullLabel />}
-              {item.isoClause && (
-                <span className="font-semibold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                  {item.isoClause}
-                </span>
-              )}
-            </div>
-
-            {/* Official Description */}
-            <div>
-              <span className="font-bold text-blue-900 block mb-0.5 text-[10px] uppercase tracking-wider">Descripción del Requerimiento (Oficial):</span>
-              <p className="text-slate-700 leading-relaxed whitespace-pre-line">{item.description}</p>
-            </div>
-
-            {/* Official How to Audit */}
-            {item.howToAudit && (
-              <div className="pt-2 border-t border-slate-200/60">
-                <span className="font-bold text-blue-900 block mb-0.5 text-[10px] uppercase tracking-wider flex items-center gap-1">
-                  <HelpCircle className="w-3.5 h-3.5 text-blue-600" /> Cómo Auditar (Oficial):
-                </span>
-                <p className="text-slate-700 leading-relaxed whitespace-pre-line">{item.howToAudit}</p>
-              </div>
-            )}
-
-            {/* Internal Helpers */}
-            {(item.whatToVerify || item.whatToShow || item.howToCheck) && (
-              <div className="pt-2 border-t border-amber-200/60 bg-amber-50/50 -mx-4 -mb-4 p-4 rounded-b-xl">
-                <span className="font-bold text-amber-800 block mb-1 text-[10px] uppercase tracking-wider flex items-center gap-1">
-                  <FileText className="w-3.5 h-3.5 text-amber-700" /> Orientación Interna:
-                </span>
-                {item.whatToVerify && (
-                  <p className="text-amber-900/90 leading-relaxed mb-1"><strong className="text-amber-950">Verificar:</strong> {item.whatToVerify}</p>
-                )}
-                {item.whatToShow && (
-                  <p className="text-amber-900/90 leading-relaxed"><strong className="text-amber-950">Documentación sugerida:</strong> {item.whatToShow}</p>
-                )}
-                {item.howToCheck && (
-                  <p className="text-amber-900/90 leading-relaxed whitespace-pre-line"><strong className="text-amber-950">Cómo comprobarlo:</strong> {item.howToCheck}</p>
-                )}
-              </div>
-            )}
-          </div>
 
           {/* EVIDENCES SECTION */}
           <div>
@@ -369,11 +336,11 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                   <span>Evidencias Documentales ({validEvidences.length})</span>
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Vinculá archivos o enlaces y confirmá su verificación explícita.
+                  Guardá el documento una vez y vinculalo a los puntos que corresponda.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -386,7 +353,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setIsLinkFormOpen((open) => !open)}
+                  onClick={() => { setIsLinkFormOpen((open) => !open); setPendingFile(null); setLibraryOpen(false); }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   <Globe className="w-3.5 h-3.5 text-slate-500" />
@@ -399,13 +366,29 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                   accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                   className="sr-only"
                   onChange={(event) => {
-                    void handleInstantUpload(event.target.files?.[0] || null);
+                    const file = event.target.files?.[0] || null;
+                    setPendingFile(file); setDocumentTitle(file?.name || ''); setIsLinkFormOpen(false); setLibraryOpen(false);
                     event.target.value = '';
                   }}
                 />
               </div>
             </div>
 
+            <button type="button" onClick={() => { setLibraryOpen(!libraryOpen); setIsLinkFormOpen(false); setPendingFile(null); }} className="text-xs text-blue-700 hover:underline mb-4">Vincular documento de otro punto</button>
+            {libraryOpen && <section className="rounded-xl border border-slate-200 p-4 mb-4 space-y-3">
+              <label className="block text-xs font-medium">Buscar en los documentos de esta auditoría<input autoFocus type="search" value={librarySearch} onChange={e => setLibrarySearch(e.target.value)} placeholder="Nombre del procedimiento o registro" className="block w-full border border-slate-300 rounded-lg p-2 mt-2" /></label>
+              <div className="max-h-56 overflow-y-auto space-y-2">{library.map(ev => <div key={ev.url} className="flex items-center gap-3 justify-between text-xs border-b border-slate-100 pb-2"><span className="break-words">{ev.title}</span><button type="button" onClick={() => reuseDocument(ev)} className="shrink-0 text-blue-700 p-2">Vincular a este punto</button></div>)}</div>
+              {!library.length && <p className="text-xs text-slate-500">No hay documentos disponibles con esa búsqueda.</p>}
+            </section>}
+            {(pendingFile || isLinkFormOpen) && <div className="grid grid-cols-2 gap-3 mb-3">
+              <label className="text-xs text-slate-600">Clase de documento<select value={documentKind} onChange={e => setDocumentKind(e.target.value as typeof documentKind)} className="block w-full border border-slate-300 rounded-lg p-2 mt-1">{Object.entries(documentKinds).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+              <label className="text-xs text-slate-600">Revisión (opcional)<input value={revision} onChange={e => setRevision(e.target.value)} placeholder="Ej.: 03" className="block w-full border border-slate-300 rounded-lg p-2 mt-1" /></label>
+            </div>}
+            {pendingFile && <form onSubmit={e => { e.preventDefault(); void handleInstantUpload(pendingFile); }} className="rounded-xl border border-slate-200 p-4 mb-4 space-y-3">
+              <label className="block text-xs font-medium">Nombre para encontrarlo después<input autoFocus required value={documentTitle} onChange={e => setDocumentTitle(e.target.value)} placeholder="PR-07 · Procedimiento de compras" className="block w-full border border-slate-300 rounded-lg p-2 mt-1" /></label>
+              <p className="text-xs text-slate-500">{pendingFile.name} · Máximo 4 MB. Para archivos más grandes, pegá su enlace de Drive.</p>
+              <div className="flex gap-3"><button type="submit" disabled={isSaving} className="bg-blue-600 text-white rounded-lg px-3 py-2 text-xs disabled:opacity-50">{isSaving ? 'Subiendo…' : 'Guardar archivo'}</button><button type="button" disabled={isSaving} onClick={() => setPendingFile(null)} className="text-xs text-slate-500">Cancelar</button></div>
+            </form>}
             {/* Form to add URL Link */}
             {isLinkFormOpen && (
               <form onSubmit={handleAddLink} className="mb-4 bg-blue-50/60 border border-blue-200 rounded-xl p-3.5 space-y-3">
@@ -510,6 +493,10 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                         <div className="flex items-center gap-2 text-xs font-bold text-blue-950">
                           <Pencil className="w-3.5 h-3.5" /> Editar Detalle de Evidencia
                         </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="text-xs">Clase<select value={editKind} onChange={e => setEditKind(e.target.value as typeof editKind)} className="block w-full border rounded-lg p-2">{Object.entries(documentKinds).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+                          <label className="text-xs">Revisión<input value={editRevision} onChange={e => setEditRevision(e.target.value)} className="block w-full border rounded-lg p-2" /></label>
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                           <div>
                             <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Tipo</label>
@@ -613,7 +600,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-bold text-slate-900 truncate">
-                              {ev.title}
+                              {ev.title}{ev.revision ? ` · Rev. ${ev.revision}` : ''}
                             </span>
                             <span className={`text-[10px] font-semibold px-2 py-0.2 rounded border ${typeCfg.bgClass}`}>
                               {typeCfg.label}
@@ -666,7 +653,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
 
                         {hasUrl && (
                           <a
-                            href={ev.url}
+                            href={safeDocumentUrl(ev.url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="p-1.5 rounded-lg border border-slate-200 text-blue-600 hover:bg-blue-50 transition-colors inline-flex items-center gap-1 text-xs font-semibold"
@@ -712,6 +699,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
             </div>
           </div>
 
+          <label className="block text-xs font-medium text-slate-700">Comentario del punto<textarea rows={3} value={formData.comment || ''} onChange={e => setFormData({ ...formData, comment: e.target.value })} className="block w-full mt-2 border border-slate-300 rounded-lg p-3" placeholder="Notas para encontrar o presentar esta documentación" /></label>
           {/* AUDIT STATUS, RESPONSIBLE & FINDINGS */}
           <div className="border-t border-slate-200 pt-4 space-y-3.5">
             <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
@@ -763,12 +751,13 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
               />
             </div>
           </div>
-        </div>
+        </fieldset>
 
         {/* Modal Footer */}
         <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
           <button
             type="button"
+            disabled={isSaving}
             onClick={onClose}
             className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
           >
@@ -777,6 +766,7 @@ export const EvidenceManagerModal: React.FC<EvidenceManagerModalProps> = ({
 
           <button
             type="button"
+            disabled={isSaving}
             onClick={handleSaveModal}
             className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors cursor-pointer"
           >

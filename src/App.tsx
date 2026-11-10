@@ -1,3 +1,4 @@
+import { DocumentList } from './components/DocumentList';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   AuditItem, 
@@ -20,7 +21,7 @@ import {
   exportAuditDataToCSV,
   type AuditRunState
 } from './services/storageService';
-import { pushAllToAppsScript, fetchAllFromAppsScript, uploadEvidenceToAppsScript, deleteEvidenceFromDrive } from './services/googleSyncService';
+import { pushAllToAppsScript, fetchAllFromAppsScript, uploadEvidenceToAppsScript } from './services/googleSyncService';
 import { 
   getAuditDefinition, 
   getAuditRunLabel, 
@@ -81,7 +82,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
 
   // PCGC View Mode: table or cards or audit
   const [pcgcViewMode, setPcgcViewMode] = useState<'table' | 'cards' | 'audit'>('table');
-  const [isoViewMode, setIsoViewMode] = useState<'table' | 'cards'>('table');
+  const [isoViewMode, setIsoViewMode] = useState<'table' | 'cards'>(() => window.innerWidth < 640 ? 'cards' : 'table');
 
   // ISO Checklist Filters state
   const [uploadsInProgress, setUploadsInProgress] = useState(0);
@@ -171,17 +172,9 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
     const itemTarget = items.find(it => it.id === id);
     const evTarget = itemTarget?.evidences?.find(ev => ev.id === evidenceId);
 
-    if (evTarget?.url && (evTarget.url.includes('drive.google.com') || evTarget.type === 'drive' || evTarget.type === 'photo' || evTarget.type === 'pdf')) {
-      try {
-        await deleteEvidenceFromDrive(evTarget.url, activeAuditKey, auditRun, true);
-      } catch (err) {
-        console.warn('No se pudo mover a borrados en Drive:', err);
-      }
-    }
-
     isDirtyRef.current = true;
     setItems(prev => prev.map(it => it.id === id ? { ...it, evidences: it.evidences.filter(ev => ev.id !== evidenceId), lastUpdated: new Date().toISOString() } : it));
-    showToast('Evidencia quitada y archivada en Drive (Borrados)');
+    showToast('Vínculo quitado del punto. El archivo se conserva en Drive.');
   };
 
   const handleQuickUpload = async (item: AuditItem, file: File) => {
@@ -639,18 +632,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
                             </select>
                           </td>
                           <td className="py-2.5 px-3 align-top">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {(item.evidences || []).map((ev) => (
-                                <EvidenceButton key={ev.id} evidence={ev} denseSquare onClick={() => setPreviewEvidence(ev)} />
-                              ))}
-                              <button
-                                type="button"
-                                onClick={() => handleQuickAddEvidence(item)}
-                                className="w-7 h-7 rounded border border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:text-violet-600"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                            <DocumentList evidences={item.evidences || []} />
                           </td>
                           <td className="py-2.5 px-3 text-right align-top">
                             <button
@@ -659,7 +641,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
                               className="text-violet-600 font-bold hover:underline inline-flex items-center gap-1 text-xs"
                             >
                               <Edit className="w-3 h-3" />
-                              <span>Detalles</span>
+                              <span>Agregar o gestionar</span>
                             </button>
                           </td>
                         </tr>
@@ -677,6 +659,7 @@ export default function App({ auditRun, onChangeAudit }: AppProps) {
       {isEvidenceModalOpen && selectedItemForModal && <EvidenceManagerModal
         key={selectedItemForModal.id}
         item={selectedItemForModal}
+        allItems={items}
         isOpen={isEvidenceModalOpen}
         onClose={() => setIsEvidenceModalOpen(false)}
         onSaveItem={handleSaveItem}

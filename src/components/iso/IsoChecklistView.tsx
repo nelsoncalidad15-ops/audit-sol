@@ -1,3 +1,4 @@
+import { RequirementDetails } from './RequirementDetails';
 import React, { useState, useMemo } from 'react';
 import { 
   AuditItem, 
@@ -115,7 +116,7 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
           const inFinding = (item.finding || '').toLowerCase().includes(q);
           const inResponsible = (item.responsible || '').toLowerCase().includes(q);
           const inEvidences = (item.evidences || []).some(
-            (e) => e.title.toLowerCase().includes(q) || (e.description || '').toLowerCase().includes(q)
+            (e) => [e.title, e.description, e.revision, e.documentKind === 'procedure' ? 'procedimiento' : e.documentKind === 'record' ? 'registro' : ''].some(text => (text || '').toLowerCase().includes(q))
           );
 
           if (!inComment && !inExtra && !inCode && !inReq && !inQuestion && !inDesc && !inVerify && !inShow && !inAudit && !inFinding && !inResponsible && !inEvidences) {
@@ -203,7 +204,7 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Buscar por código, requisito, documentación, responsable..."
+              placeholder="Buscar punto, procedimiento o archivo…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full text-xs pl-9 pr-8 py-2 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-sans"
@@ -396,7 +397,7 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
                       <th className="py-3 px-3.5 w-20">Código</th>
                       <th className="py-3 px-3.5 min-w-[320px]">Requisito</th>
                       <th className="py-3 px-3.5 w-32">Estado</th>
-                      <th className="py-3 px-3.5 min-w-[260px]">Evidencias y comentarios</th>
+                      <th className="py-3 px-3.5 min-w-[260px]">Documentos y evidencias</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
@@ -463,6 +464,7 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
                             <div className={`text-xs leading-snug ${isMandatory ? 'font-black text-slate-950 text-[13px]' : 'font-bold text-slate-900'}`}>
                               {item.requirement}
                             </div>
+                            <RequirementDetails item={item} />
 
                             {brandRef && brandRef.note && (
                               <div className="mt-1.5 p-1.5 rounded-lg bg-slate-100/80 border border-slate-200 text-[10px] text-slate-700">
@@ -541,6 +543,7 @@ export const IsoChecklistView: React.FC<IsoChecklistViewProps> = ({
                     </select>
                   </div>
                   <h3 className="text-sm font-semibold text-slate-900">{item.requirement}</h3>
+                  <RequirementDetails item={item} />
                   {item.finding && <p className="text-xs text-rose-700 whitespace-pre-wrap">Hallazgo: {item.finding}</p>}
                   {brandRef && brandRef.note && (
                     <div className="p-2 rounded-lg bg-slate-100 border border-slate-200 text-[11px] text-slate-700">

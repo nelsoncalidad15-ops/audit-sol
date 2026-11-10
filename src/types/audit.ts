@@ -22,6 +22,8 @@ export interface EvidenceLink {
   notes?: string;
   fileSize?: string;
   thumbnailUrl?: string;
+  documentKind?: 'procedure' | 'record' | 'other';
+  revision?: string;
 }
 
 export interface AuditItem {

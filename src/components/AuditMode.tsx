@@ -1,3 +1,5 @@
+import { DocumentList } from './DocumentList';
+import { RequirementDetails } from './iso/RequirementDetails';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
@@ -67,9 +69,7 @@ export const AuditMode: React.FC<AuditModeProps> = ({
 
   // Keep activeId in sync if filtered list changes
   useEffect(() => {
-    if (initialItemId && items.some((i) => i.id === initialItemId)) {
-      setActiveId(initialItemId);
-    } else if (!items.some((item) => item.id === activeId)) {
+    if (!items.some((item) => item.id === activeId)) {
       setActiveId(items[0]?.id ?? null);
     }
   }, [initialItemId, items, activeId]);
@@ -138,7 +138,7 @@ export const AuditMode: React.FC<AuditModeProps> = ({
 
   // Filter dropdown options by search
   const searchableItems = searchFilter
-    ? items.filter((it) => it.code.toLowerCase().includes(searchFilter.toLowerCase()) || it.requirement.toLowerCase().includes(searchFilter.toLowerCase()))
+    ? items.filter(it => [it.code, it.requirement, ...it.evidences.flatMap(ev => [ev.title, ev.description, ev.revision, ev.documentKind === 'procedure' ? 'procedimiento' : ev.documentKind === 'record' ? 'registro' : ''])].some(text => (text || '').toLowerCase().includes(searchFilter.toLowerCase().trim())))
     : items;
 
   return (
@@ -176,6 +176,17 @@ export const AuditMode: React.FC<AuditModeProps> = ({
           </div>
         </div>
 
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <label htmlFor="auditor-search" className="block text-xs font-medium text-slate-600 mb-2">Encontrar un punto o documento</label>
+          <input id="auditor-search" type="search" value={searchFilter} onChange={e => setSearchFilter(e.target.value)} placeholder="Ej.: 8.4, compras, PR-07…" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          {searchFilter.trim() && <div className="max-h-60 overflow-y-auto mt-2" aria-live="polite">
+            <p className="text-xs text-slate-500 py-2">{searchableItems.length} puntos encontrados</p>
+            {searchableItems.map(result => <button key={result.id} type="button" onClick={() => { setActiveId(result.id); setSearchFilter(''); }} className="block w-full text-left p-2 rounded-lg hover:bg-slate-50 text-sm">
+              <span className="font-mono text-blue-700 mr-2">{result.code}</span>{result.requirement}
+              <span className="block text-xs text-slate-500 mt-1">{result.evidences.filter(e => e.url).map(e => e.title).join(' · ') || 'Sin documentos'}</span>
+            </button>)}
+          </div>}
+        </div>
         {/* MAIN AUDIT REQUIREMENT CARD */}
         <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           {/* Card Top Header */}
@@ -228,117 +239,15 @@ export const AuditMode: React.FC<AuditModeProps> = ({
               )}
             </div>
 
-            {/* 1. Descripción del Requerimiento — OFICIAL */}
-            <div className="p-3.5 rounded-xl bg-white border border-slate-200 shadow-2xs">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-blue-900 mb-1.5">
-                Descripción del Requerimiento (Oficial):
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-800 leading-relaxed whitespace-pre-line">
-                {item.description}
-              </p>
-            </div>
-
-            {/* 2. Cómo Auditar — OFICIAL */}
-            {item.howToAudit && (
-              <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200/80">
-                <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-blue-950 mb-1.5">
-                  <HelpCircle className="w-4 h-4 text-blue-600" />
-                  <span>Cómo Auditar · Instrucciones y Muestreo (Oficial):</span>
-                </h2>
-                <p className="text-xs sm:text-sm text-blue-950 leading-relaxed whitespace-pre-line">
-                  {item.howToAudit}
-                </p>
+            <section>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <h2 className="text-sm font-semibold text-slate-800">Documentos del punto ({validEvidences.length})</h2>
+                {!readOnly && <button type="button" onClick={() => onOpenEvidenceManager(item)} className="text-xs text-blue-700 hover:underline">Agregar o gestionar evidencia</button>}
               </div>
-            )}
-
-            {/* 3. Orientación interna */}
-            {(item.whatToShow || item.whatToVerify || item.howToCheck) && (
-              <div className="border border-amber-200 rounded-xl overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setIsHowToCheckOpen(!isHowToCheckOpen)}
-                  className="w-full flex items-center justify-between p-3 bg-amber-50/80 hover:bg-amber-100/80 transition-colors text-left cursor-pointer"
-                >
-                  <span className="flex items-center gap-2 text-xs font-bold text-amber-900">
-                    <FileText className="w-4 h-4 text-amber-700" />
-                    <span>Orientación Interna · Guía Rápida y Documentación Sugerida</span>
-                  </span>
-                  {isHowToCheckOpen ? <ChevronUp className="w-4 h-4 text-amber-600" /> : <ChevronDown className="w-4 h-4 text-amber-600" />}
-                </button>
-
-                {isHowToCheckOpen && (
-                  <div className="p-4 bg-white border-t border-amber-200 space-y-2.5">
-                    {item.whatToVerify && (
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 block mb-0.5">Qué se verifica (orientación):</span>
-                        <p className="text-xs text-amber-950 leading-relaxed">{item.whatToVerify}</p>
-                      </div>
-                    )}
-                    {item.whatToShow && (
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 block mb-0.5">Documentación sugerida (orientación):</span>
-                        <p className="text-xs text-amber-950 leading-relaxed">{item.whatToShow}</p>
-                      </div>
-                    )}
-                    {item.howToCheck && (
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 block mb-0.5">Cómo comprobarlo (orientación):</span>
-                        <p className="text-xs text-amber-950 leading-relaxed whitespace-pre-line">{item.howToCheck}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 4. Direct Evidences Links */}
-            <div>
-              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                  <FileCheck2 className="w-4 h-4 text-blue-600" />
-                  <span>Evidencias Disponibles ({validEvidences.length})</span>
-                </h2>
-
-                <button
-                  type="button"
-                  onClick={() => onOpenEvidenceManager(item)}
-                  disabled={readOnly}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer"
-                >
-                  <FilePlus2 className="w-3.5 h-3.5" />
-                  <span>Gestionar evidencias</span>
-                </button>
-              </div>
-
-              {validEvidences.length > 0 ? (
-                <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-                  {validEvidences.map((evidence) => (
-                    <EvidenceButton
-                      key={evidence.id}
-                      evidence={evidence}
-                      onClick={() => {
-                        if (evidence.type === 'photo' || evidence.type === 'pdf') {
-                          onPreviewEvidence(evidence);
-                        } else if (evidence.url) {
-                          window.open(evidence.url, '_blank', 'noopener,noreferrer');
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50/70 px-4 py-3.5 text-xs sm:text-sm text-amber-900 flex items-center justify-between">
-                  <span>Aún no hay evidencias vinculadas para este criterio.</span>
-                  <button
-                    type="button"
-                    onClick={() => onOpenEvidenceManager(item)}
-                    className="font-bold text-blue-700 hover:underline cursor-pointer"
-                  >
-                    + Adjuntar archivo
-                  </button>
-                </div>
-              )}
-            </div>
+              <DocumentList evidences={evidences} />
+            </section>
+            <RequirementDetails item={item} />
+            {item.comment && <details className="text-sm text-slate-600"><summary className="cursor-pointer">Comentario</summary><p className="whitespace-pre-wrap mt-2">{item.comment}</p></details>}
 
             {/* 5. Verification Result (1-Click Status buttons) */}
             <div className="pt-4 border-t border-slate-200">
@@ -419,7 +328,7 @@ export const AuditMode: React.FC<AuditModeProps> = ({
                 </div>
               ) : (
                 <div 
-                  onClick={() => setIsFindingEditing(true)}
+                  onClick={() => !readOnly && setIsFindingEditing(true)}
                   className="p-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100/80 transition-colors cursor-pointer text-xs text-slate-600"
                 >
                   {findingText ? (

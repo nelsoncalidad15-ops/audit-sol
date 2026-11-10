@@ -1,3 +1,4 @@
+import { DocumentList } from './DocumentList';
 import React, { useState } from 'react';
 import { 
   AuditItem, 
@@ -170,38 +171,7 @@ export const AuditItemCard: React.FC<AuditItemCardProps> = ({
             </button>
           </div>
 
-          {validEvidences.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {validEvidences.map((ev) => (
-                <EvidenceButton
-                  key={ev.id}
-                  evidence={ev}
-                  onClick={() => {
-                    if (onQuickPreviewEvidence && (ev.type === 'photo' || ev.type === 'pdf')) {
-                      onQuickPreviewEvidence(ev);
-                    } else if (ev.url) {
-                      window.open(ev.url, '_blank', 'noopener,noreferrer');
-                    }
-                  }}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="flex items-center justify-between py-1 text-[11px] text-amber-800">
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3 text-amber-600" />
-                <span>Sin evidencias vinculadas aún</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => onQuickAddEvidence(item)}
-                disabled={readOnly}
-                className="font-bold text-blue-600 hover:underline cursor-pointer"
-              >
-                + Subir
-              </button>
-            </div>
-          )}
+          <DocumentList evidences={evidences} />
         </div>
 
         {/* Collapsible Detail Section (Full Official Content) */}
