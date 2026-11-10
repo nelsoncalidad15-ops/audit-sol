@@ -287,6 +287,8 @@ function uploadEvidence_(request, audit, auditRun) {
       id: evidence.id,
       type: evidence.type || 'other',
       title: evidence.title || file.name,
+      documentKind: evidence.documentKind || 'other',
+      revision: evidence.revision || '',
       url: driveFile.getUrl(),
       description: evidence.description || '',
       addedAt: evidence.addedAt || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),

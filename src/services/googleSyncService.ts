@@ -58,7 +58,7 @@ export async function deleteEvidenceFromDrive(
 
 export async function uploadEvidenceToAppsScript(
   item: AuditItem,
-  evidence: Pick<EvidenceLink, 'id' | 'type' | 'title' | 'description' | 'addedAt'>,
+  evidence: Pick<EvidenceLink, 'id' | 'type' | 'title' | 'description' | 'addedAt' | 'documentKind' | 'revision'>,
   file: File,
   auditKey: AuditKey = 'iso9001',
   auditRun?: AuditRunContext,
